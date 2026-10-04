@@ -20,43 +20,45 @@ env:
 jobs:
   fmt:
     name: 'Format (rustfmt)'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v4.3.1
 
     - name: Install Rust (stable + rustfmt)
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
       with:
+        toolchain: 1.99.0
         components: rustfmt
 
     - name: Rust cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@v2.9.2
 
     - name: cargo fmt --check
       run: cargo fmt --all --check
 
   clippy:
     name: 'Lint (clippy)'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v4.3.1
 
     - name: Install Rust (stable + clippy)
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
       with:
+        toolchain: 1.99.0
         components: clippy
 
     - name: Install cargo-sqlx
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@v2.87.24
       with:
-        tool: sqlx-cli
+        tool: sqlx-cli@0.8.6
 
     - name: Rust cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@v2.9.2
 
     - name: cargo sqlx prepare --check
       run: cargo sqlx prepare --check
@@ -72,26 +74,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - rust: stable
-          os: ubuntu-latest
-        - rust: beta
-          os: ubuntu-latest
+        - rust: 1.99.0
+          os: ubuntu-24.04
+        - rust: 1.100.0-beta.2
+          os: ubuntu-24.04
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v4.3.1
 
     - name: Install Rust (${{ matrix.rust }})
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
       with:
         toolchain: ${{ matrix.rust }}
 
     - name: Install cargo-sqlx
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@v2.87.24
       with:
-        tool: sqlx-cli
+        tool: sqlx-cli@0.8.6
 
     - name: Rust cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@v2.9.2
 
     - name: cargo sqlx prepare --check
       run: cargo sqlx prepare --check
