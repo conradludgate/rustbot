@@ -21,7 +21,8 @@ WORKDIR ${APP}
 
 ENV TZ=Etc/UTC
 
-COPY assets migrations ./
+COPY assets ./assets
+COPY migrations ./migrations
 COPY --from=builder /app/target/release/main ./ferrisbot
 
 ENTRYPOINT ["./ferrisbot"]
