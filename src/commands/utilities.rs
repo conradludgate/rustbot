@@ -14,6 +14,24 @@ use tracing::info;
 
 use crate::types::Context;
 
+const SOURCE_GIT_TAG: &str = git_version::git_version!(
+	args = ["--tags", "--exact-match", "--dirty=-modified"],
+	fallback = "untagged",
+);
+const SOURCE_GIT_SHA: &str = git_version::git_version!(
+	args = ["--always", "--abbrev=40", "--match=__never__"],
+	fallback = "unknown",
+);
+
+const GIT_TAG: &str = match option_env!("FERRISBOT_GIT_TAG") {
+	Some(value) if !value.is_empty() => value,
+	_ => SOURCE_GIT_TAG,
+};
+const GIT_SHA: &str = match option_env!("FERRISBOT_GIT_SHA") {
+	Some(value) if !value.is_empty() => value,
+	_ => SOURCE_GIT_SHA,
+};
+
 /// Evaluates Go code
 #[poise::command(
 	prefix_command,
@@ -95,8 +113,10 @@ pub async fn uptime(ctx: Context<'_>) -> Result<(), Error> {
 	let (hours, minutes) = div_mod(minutes, 60);
 	let (days, hours) = div_mod(hours, 24);
 
-	ctx.say(format!("Uptime: {days}d {hours}h {minutes}m {seconds}s"))
-		.await?;
+	ctx.say(format!(
+		"Uptime: {days}d {hours}h {minutes}m {seconds}s\nBuild: tag {GIT_TAG}, commit {GIT_SHA}"
+	))
+	.await?;
 
 	Ok(())
 }

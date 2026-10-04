@@ -52,6 +52,9 @@ jobs:
           file: Containerfile
           context: .
           push: ${{ github.event_name != 'pull_request' }}
+          build-args: |
+            FERRISBOT_GIT_TAG=${{ github.ref_name }}
+            FERRISBOT_GIT_SHA=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
