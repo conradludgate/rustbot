@@ -213,7 +213,7 @@ pub async fn send_audit_log(
 	Ok(())
 }
 
-pub async fn paginate(ctx: Context<'_>, pages: &[String]) -> Result<(), serenity::Error> {
+pub async fn paginate(ctx: Context<'_>, pages: &[String]) -> Result<(), Error> {
 	// Define some unique identifiers for the navigation buttons
 	let ctx_id = ctx.id();
 	let prev_button_id = format!("{ctx_id}prev");

@@ -1,5 +1,6 @@
 struct MockDocsClient;
 
+#[allow(clippy::unused_async_trait_impl)]
 impl super::DocsClient for MockDocsClient {
 	async fn page_exists(&self, url: &str) -> bool {
 		match url {
