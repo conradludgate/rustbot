@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Error, Result};
 use poise::serenity_prelude as serenity;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex as AsyncMutex, RwLock};
 
 use crate::{SecretStore, commands};
 
@@ -25,6 +25,7 @@ pub struct Data {
 	pub http: reqwest::Client,
 	pub godbolt_metadata: StdMutex<commands::godbolt::GodboltMetadata>,
 	pub move_channel_locks: StdMutex<HashSet<serenity::ChannelId>>,
+	pub server_icon_changer: AsyncMutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Data {
@@ -49,6 +50,7 @@ impl Data {
 			http: reqwest::Client::new(),
 			godbolt_metadata: StdMutex::new(commands::godbolt::GodboltMetadata::default()),
 			move_channel_locks: StdMutex::new(HashSet::new()),
+			server_icon_changer: AsyncMutex::new(None),
 		})
 	}
 }

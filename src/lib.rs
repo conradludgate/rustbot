@@ -31,6 +31,10 @@ or
 code here
 `\x1b[0m`\x1b[0m`
 ```";
+const SERVER_ICON_CHANGE_TIMEOUT: Duration = Duration::from_secs(60);
+const SERVER_ICON_MAX_FAILURES: u32 = 5;
+const SERVER_ICON_INITIAL_BACKOFF_SECS: u64 = 60;
+const SERVER_ICON_MAX_BACKOFF_SECS: u64 = 60 * 60;
 
 pub mod checks;
 pub mod commands;
@@ -297,8 +301,7 @@ async fn event_handler(
 				.await;
 		}
 		serenity::FullEvent::Ready { .. } => {
-			let http = ctx.http.clone();
-			tokio::spawn(init_server_icon_changer(http, data.discord_guild_id));
+			ensure_server_icon_changer(ctx, data).await;
 		}
 		serenity::FullEvent::Message { new_message } => {
 			if let Some(gid) = new_message.guild_id
@@ -375,40 +378,100 @@ async fn fetch_icon_paths() -> tokio::io::Result<Box<[PathBuf]>> {
 	Ok(icon_paths.into())
 }
 
-async fn init_server_icon_changer(
-	ctx: impl serenity::CacheHttp,
-	guild_id: serenity::GuildId,
-) -> anyhow::Result<()> {
-	let icon_paths = fetch_icon_paths()
-		.await
-		.map_err(|e| anyhow!("Failed to read server-icons directory: {e}"))?;
-
-	if icon_paths.is_empty() {
-		warn!("No server icons found in assets/server-icons; skipping icon rotation");
-		return Ok(());
+async fn ensure_server_icon_changer(ctx: &serenity::Context, data: &Data) {
+	let mut task = data.server_icon_changer.lock().await;
+	if task.as_ref().is_some_and(|task| !task.is_finished()) {
+		return;
 	}
 
+	if task.take().is_some() {
+		warn!("Server icon changer stopped; restarting it");
+	}
+
+	let http = ctx.http.clone();
+	*task = Some(tokio::spawn(run_server_icon_changer(
+		http,
+		data.discord_guild_id,
+	)));
+}
+
+async fn run_server_icon_changer(ctx: impl serenity::CacheHttp, guild_id: serenity::GuildId) {
+	let mut consecutive_failures = 0;
+
 	loop {
+		let icon_paths = match fetch_icon_paths().await {
+			Ok(icon_paths) if !icon_paths.is_empty() => icon_paths,
+			Ok(_) => {
+				warn!("No server icons found in assets/server-icons");
+				wait_before_server_icon_retry(&mut consecutive_failures).await;
+				continue;
+			}
+			Err(error) => {
+				warn!("Failed to read server-icons directory: {error}");
+				wait_before_server_icon_retry(&mut consecutive_failures).await;
+				continue;
+			}
+		};
+
 		// Attempt to find all images and select one at random
 		let icon = icon_paths.iter().choose(&mut rand::rng());
 		if let Some(icon_path) = icon {
 			info!("Changing server icon to {:?}", icon_path);
 
 			// Attempt to change the server icon
-			let icon_change_result = async {
+			let icon_change_result = match tokio::time::timeout(SERVER_ICON_CHANGE_TIMEOUT, async {
 				let icon = serenity::CreateAttachment::path(icon_path).await?;
 				let edit_guild = serenity::EditGuild::new().icon(Some(&icon));
 				guild_id.edit(&ctx, edit_guild).await
-			}
-			.await;
+			})
+			.await
+			{
+				Ok(Ok(_)) => Ok(()),
+				Ok(Err(error)) => Err(anyhow!(error)),
+				Err(error) => Err(anyhow!(
+					"timed out after {SERVER_ICON_CHANGE_TIMEOUT:?}: {error}"
+				)),
+			};
 
 			if let Err(e) = icon_change_result {
-				warn!("Failed to change server icon: {}", e);
+				warn!("Failed to change server icon: {e}");
+				wait_before_server_icon_retry(&mut consecutive_failures).await;
+				continue;
 			}
 		}
 
+		consecutive_failures = 0;
+
 		// Sleep for between 24 and 48 hours
 		let sleep_duration = rand::rng().random_range((60 * 60 * 24)..(60 * 60 * 48));
+		info!("Server icon changed; next rotation in {sleep_duration:?}");
 		tokio::time::sleep(Duration::from_secs(sleep_duration)).await;
 	}
+}
+
+async fn wait_before_server_icon_retry(consecutive_failures: &mut u32) {
+	*consecutive_failures = consecutive_failures.saturating_add(1);
+
+	let sleep_duration = if *consecutive_failures >= SERVER_ICON_MAX_FAILURES {
+		let sleep_duration =
+			Duration::from_secs(rand::rng().random_range((60 * 60 * 24)..(60 * 60 * 48)));
+		warn!(
+			"Server icon changer reached {} consecutive failures; retrying with a new icon in {sleep_duration:?}",
+			*consecutive_failures,
+		);
+		*consecutive_failures = 0;
+		sleep_duration
+	} else {
+		let exponent = (*consecutive_failures - 1).min(6);
+		let backoff_secs = (SERVER_ICON_INITIAL_BACKOFF_SECS * 2u64.pow(exponent))
+			.min(SERVER_ICON_MAX_BACKOFF_SECS);
+		let sleep_duration = Duration::from_secs(backoff_secs);
+		warn!(
+			"Retrying server icon rotation after failure {} in {sleep_duration:?}",
+			*consecutive_failures,
+		);
+		sleep_duration
+	};
+
+	tokio::time::sleep(sleep_duration).await;
 }
