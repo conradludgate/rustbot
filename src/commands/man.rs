@@ -14,6 +14,7 @@ const USER_AGENT: &str = "kangalioo/rustbot";
 	category = "Utilities"
 )]
 #[tracing::instrument(
+	name = "discord.command.man",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

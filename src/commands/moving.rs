@@ -26,6 +26,7 @@ const MAX_TIME_SPAN: Duration = Duration::from_hours(2);
 	required_bot_permissions = "MANAGE_MESSAGES | MANAGE_WEBHOOKS | MANAGE_THREADS | SEND_MESSAGES_IN_THREADS"
 )]
 #[tracing::instrument(
+	name = "discord.command.move_messages",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

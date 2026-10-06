@@ -1,0 +1,17 @@
+[database]
+disabled = true
+url = "sqlite://database/ferris.sqlite3"
+
+[log]
+filter = "info,serenity=warn"
+rotation = "daily"
+dir = "logs"
+prefix = "ferris-local"
+suffix = "log"
+max_files = 3
+
+[telemetry]
+enabled = true
+service_name = "ferrisbot-local"
+deployment_environment = "local"
+sample_rate = 1.0

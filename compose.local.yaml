@@ -1,0 +1,58 @@
+services:
+  discord-mock:
+    # Pinned to the published multi-architecture image digest.
+    image: ghcr.io/tomacheese/fauxcord:latest@sha256:73dcb128411301a664ffd3172b01cb693a158455d9c704c8f268d4288716e258
+    environment:
+      PORT: "3000"
+      HOST: 0.0.0.0
+      DB_PATH: /data/mock.db
+      UPLOAD_PATH: /data/uploads
+      BASE_URL: http://discord-mock:3000
+      LOG_LEVEL: info
+      DISABLE_AUTH: "false"
+      LATENCY_MS: "0"
+      SEED_FILE: /config/fauxcord-seed.json
+    volumes:
+      - ./local-test/fauxcord-seed.json:/config/fauxcord-seed.json:ro
+      - fauxcord-data:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/_mock/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.21.0@sha256:3d0ac795ff98aa04d1be04311d2dac6c25b4bfc8322dc02e53bc5b170c5018c3
+    ports:
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:4318:4318"
+
+  ferris:
+    build:
+      context: .
+      dockerfile: Containerfile
+    depends_on:
+      discord-mock:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    environment:
+      FERRIS_DISCORD_API_PROXY: http://discord-mock:3000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      # Ferrisbot currently gates OTLP initialization on this being non-empty;
+      # Jaeger does not require or validate this local-only placeholder.
+      OTEL_EXPORTER_OTLP_HEADERS: Authorization=local-test-only
+      RUST_BACKTRACE: "1"
+    volumes:
+      - ./local-test/config:/usr/src/app/config:ro
+      - ferris-local-database:/usr/src/app/database
+      - ferris-local-logs:/usr/src/app/logs
+    restart: "no"
+
+volumes:
+  fauxcord-data:
+  ferris-local-database:
+  ferris-local-logs:

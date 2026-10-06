@@ -40,6 +40,7 @@ const GIT_SHA: &str = match option_env!("FERRISBOT_GIT_SHA") {
 	discard_spare_arguments
 )]
 #[tracing::instrument(
+	name = "discord.command.go",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -66,6 +67,7 @@ pub async fn go(ctx: Context<'_>) -> Result<(), Error> {
 	discard_spare_arguments
 )]
 #[tracing::instrument(
+	name = "discord.command.source",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -84,6 +86,7 @@ pub async fn source(ctx: Context<'_>) -> Result<(), Error> {
 /// Show this menu
 #[poise::command(prefix_command, slash_command, category = "Utilities", track_edits)]
 #[tracing::instrument(
+	name = "discord.command.help",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -126,6 +129,7 @@ You can edit your message to the bot and the bot will edit its response.";
 	check = "crate::checks::check_is_moderator"
 )]
 #[tracing::instrument(
+	name = "discord.command.register",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -144,6 +148,7 @@ pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
 /// Tells you how long the bot has been up for
 #[poise::command(prefix_command, slash_command, category = "Utilities")]
 #[tracing::instrument(
+	name = "discord.command.uptime",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -182,6 +187,7 @@ pub async fn uptime(ctx: Context<'_>) -> Result<(), Error> {
 	hide_in_help
 )]
 #[tracing::instrument(
+	name = "discord.command.conradluget",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -253,6 +259,7 @@ pub async fn conradluget(
 	on_error = "crate::helpers::acknowledge_fail"
 )]
 #[tracing::instrument(
+	name = "discord.command.cleanup",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -298,6 +305,7 @@ pub async fn cleanup(
 	on_error = "crate::helpers::acknowledge_fail"
 )]
 #[tracing::instrument(
+	name = "discord.command.ban",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -337,6 +345,7 @@ pub async fn ban(
 	on_error = "crate::helpers::acknowledge_fail"
 )]
 #[tracing::instrument(
+	name = "discord.command.selftimeout",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -388,6 +397,7 @@ pub async fn selftimeout(
 	discard_spare_arguments // to allow smooth integration in the closing message, e.g. "?solved, thank you"
 )]
 #[tracing::instrument(
+	name = "discord.command.solved",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -443,6 +453,7 @@ pub async fn solved(ctx: Context<'_>) -> Result<(), Error> {
 	on_error = "crate::helpers::acknowledge_fail"
 )]
 #[tracing::instrument(
+	name = "discord.command.edit",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -533,6 +544,7 @@ pub async fn edit(
 )]
 /// Shows information about the server
 #[tracing::instrument(
+	name = "discord.command.server",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -595,6 +607,7 @@ pub async fn server(ctx: Context<'_>) -> Result<(), Error> {
 )]
 /// Shows information about a user
 #[tracing::instrument(
+	name = "discord.command.user",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

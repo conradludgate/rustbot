@@ -3,7 +3,7 @@ disabled = false
 url = "sqlite://database/ferris.sqlite3"
 
 [log]
-filter = ""
+filter = "info,serenity=warn"
 rotation = "daily"
 dir = "logs"
 prefix = "ferris"

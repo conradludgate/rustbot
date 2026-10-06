@@ -62,6 +62,7 @@ async fn play_or_eval(
 	category = "Playground"
 )]
 #[tracing::instrument(
+	name = "discord.command.play",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -100,6 +101,7 @@ help_text_fn = "playwarn_help",
 category = "Playground"
 )]
 #[tracing::instrument(
+	name = "discord.command.playwarn",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -138,6 +140,7 @@ pub fn playwarn_help() -> String {
 	category = "Playground"
 )]
 #[tracing::instrument(
+	name = "discord.command.eval",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

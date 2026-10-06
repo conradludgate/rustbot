@@ -17,6 +17,7 @@ use sqlx::{Pool, Sqlite};
 	subcommand_required
 )]
 #[tracing::instrument(
+	name = "discord.command.highlight",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -33,6 +34,7 @@ pub async fn highlight(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 /// Adds a highlight. When a highlight is matched, you will receive a DM.
 #[tracing::instrument(
+	name = "discord.command.highlight.add",
 	skip_all,
 	fields(
 		command = %c.command().qualified_name,
@@ -61,6 +63,7 @@ pub async fn add(c: Context<'_>, regex: String) -> Result<()> {
 #[poise::command(prefix_command, slash_command)]
 /// Removes a highlight by ID.
 #[tracing::instrument(
+	name = "discord.command.highlight.remove",
 	skip_all,
 	fields(
 		command = %c.command().qualified_name,
@@ -92,6 +95,7 @@ pub async fn remove(c: Context<'_>, id: i64) -> Result<()> {
 #[poise::command(prefix_command, slash_command)]
 /// Lists your current highlights
 #[tracing::instrument(
+	name = "discord.command.highlight.list",
 	skip_all,
 	fields(
 		command = %c.command().qualified_name,
@@ -138,6 +142,7 @@ pub async fn matches(author: UserId, haystack: &str, db: &Pool<Sqlite>) -> Resul
 #[poise::command(prefix_command, slash_command, rename = "match")]
 /// Tests if your highlights match a given string
 #[tracing::instrument(
+	name = "discord.command.highlight.match",
 	skip_all,
 	fields(
 		command = %c.command().qualified_name,

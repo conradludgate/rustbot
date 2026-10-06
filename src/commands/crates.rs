@@ -118,6 +118,7 @@ async fn autocomplete_crate(ctx: Context<'_>, partial: &str) -> impl Iterator<It
 	category = "Crates"
 )]
 #[tracing::instrument(
+	name = "discord.command.crate",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -237,6 +238,7 @@ fn rustc_crate_link(crate_name: &str) -> Option<&'static str> {
 	category = "Crates"
 )]
 #[tracing::instrument(
+	name = "discord.command.doc",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

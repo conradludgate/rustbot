@@ -34,3 +34,5 @@ logs-bkp/
 ferris.secrets.toml
 ferris.toml
 database/
+!/local-test/config/ferris.toml
+!/local-test/config/ferris.secrets.toml

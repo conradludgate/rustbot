@@ -67,6 +67,7 @@ fn bench(functions: &[(&str, fn())]) {
 	category = "Playground"
 )]
 #[tracing::instrument(
+	name = "discord.command.microbench",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

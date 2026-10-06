@@ -202,7 +202,17 @@ pub async fn serenity(
 		| serenity::GatewayIntents::GUILD_MEMBERS
 		| serenity::GatewayIntents::MESSAGE_CONTENT;
 
-	let client = serenity::ClientBuilder::new(token, intents)
+	let mut http = serenity::HttpBuilder::new(&token);
+	if let Some(proxy) = std::env::var("FERRIS_DISCORD_API_PROXY")
+		.ok()
+		.filter(|proxy| !proxy.trim().is_empty())
+	{
+		// Serenity's rate-limited request path does not apply its HTTP proxy.
+		// Proxies are expected to own rate limiting when one is configured.
+		http = http.proxy(proxy).ratelimiter_disabled(true);
+	}
+
+	let client = serenity::ClientBuilder::new_with_http(http.build(), intents)
 		.framework(framework)
 		.await
 		.map_err(|e| anyhow!(e))?;

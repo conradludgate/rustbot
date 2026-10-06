@@ -25,6 +25,7 @@ async fn send_modmail_success(ctx: Context<'_>, modmail: &GuildChannel) -> Resul
 	category = "Modmail"
 )]
 #[tracing::instrument(
+	name = "discord.command.open_modmail.message",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -58,6 +59,7 @@ pub async fn modmail_context_menu_for_message(
 	category = "Modmail"
 )]
 #[tracing::instrument(
+	name = "discord.command.open_modmail.user",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -96,6 +98,7 @@ pub async fn modmail_context_menu_for_user(
 /// You can still always ping the Moderator role if you're comfortable doing so.
 #[poise::command(prefix_command, slash_command, ephemeral, category = "Modmail")]
 #[tracing::instrument(
+	name = "discord.command.modmail",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

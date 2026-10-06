@@ -215,6 +215,7 @@ impl<'a> From<&'a str> for SemverRanking<'a> {
 /// Lists all available godbolt rustc targets
 #[poise::command(prefix_command, slash_command, broadcast_typing, category = "Godbolt")]
 #[tracing::instrument(
+	name = "discord.command.targets",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

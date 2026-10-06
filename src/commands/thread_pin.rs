@@ -36,6 +36,7 @@ async fn can_pin_in_thread(ctx: Context<'_>) -> Result<(), ThreadPinError> {
 
 #[poise::command(context_menu_command = "Pin Message to Thread", guild_only)]
 #[tracing::instrument(
+	name = "discord.command.pin_message_to_thread",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
