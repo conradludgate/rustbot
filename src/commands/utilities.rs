@@ -39,6 +39,16 @@ const GIT_SHA: &str = match option_env!("FERRISBOT_GIT_SHA") {
 	category = "Utilities",
 	discard_spare_arguments
 )]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
 pub async fn go(ctx: Context<'_>) -> Result<(), Error> {
 	if rand::rng().random_bool(0.01) {
 		ctx.say("Yes").await?;
@@ -55,6 +65,16 @@ pub async fn go(ctx: Context<'_>) -> Result<(), Error> {
 	category = "Utilities",
 	discard_spare_arguments
 )]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
 pub async fn source(ctx: Context<'_>) -> Result<(), Error> {
 	ctx.say("https://github.com/rust-community-discord/ferrisbot-for-discord")
 		.await?;
@@ -63,6 +83,16 @@ pub async fn source(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Show this menu
 #[poise::command(prefix_command, slash_command, category = "Utilities", track_edits)]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
 pub async fn help(
 	ctx: Context<'_>,
 	#[description = "Specific command to show help about"]
@@ -95,6 +125,16 @@ You can edit your message to the bot and the bot will edit its response.";
 	hide_in_help,
 	check = "crate::checks::check_is_moderator"
 )]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
 pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
 	poise::builtins::register_application_commands_buttons(ctx).await?;
 
@@ -103,6 +143,16 @@ pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Tells you how long the bot has been up for
 #[poise::command(prefix_command, slash_command, category = "Utilities")]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
 pub async fn uptime(ctx: Context<'_>) -> Result<(), Error> {
 	let uptime = ctx.data().bot_start_time.elapsed();
 
@@ -130,6 +180,16 @@ pub async fn uptime(ctx: Context<'_>) -> Result<(), Error> {
 	category = "Utilities",
 	track_edits,
 	hide_in_help
+)]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
 )]
 pub async fn conradluget(
 	ctx: Context<'_>,
@@ -192,6 +252,16 @@ pub async fn conradluget(
 	category = "Utilities",
 	on_error = "crate::helpers::acknowledge_fail"
 )]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
 pub async fn cleanup(
 	ctx: Context<'_>,
 	#[description = "Number of messages to delete"] num_messages: Option<usize>,
@@ -227,6 +297,16 @@ pub async fn cleanup(
 	category = "Utilities",
 	on_error = "crate::helpers::acknowledge_fail"
 )]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
 pub async fn ban(
 	ctx: Context<'_>,
 	#[description = "Banned user"] banned_user: serenity::Member,
@@ -255,6 +335,16 @@ pub async fn ban(
 	slash_command,
 	category = "Utilities",
 	on_error = "crate::helpers::acknowledge_fail"
+)]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
 )]
 pub async fn selftimeout(
 	ctx: Context<'_>,
@@ -296,6 +386,16 @@ pub async fn selftimeout(
 	prefix_command,
 	category = "Utilities",
 	discard_spare_arguments // to allow smooth integration in the closing message, e.g. "?solved, thank you"
+)]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
 )]
 pub async fn solved(ctx: Context<'_>) -> Result<(), Error> {
 	let mut thread = ctx
@@ -341,6 +441,16 @@ pub async fn solved(ctx: Context<'_>) -> Result<(), Error> {
 	category = "Utilities",
 	check = "crate::checks::check_is_moderator",
 	on_error = "crate::helpers::acknowledge_fail"
+)]
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
 )]
 pub async fn edit(
 	ctx: Context<'_>,
@@ -422,6 +532,16 @@ pub async fn edit(
 	on_error = "crate::helpers::acknowledge_fail"
 )]
 /// Shows information about the server
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
 pub async fn server(ctx: Context<'_>) -> Result<(), Error> {
 	let guild = ctx
 		.guild()
@@ -474,6 +594,16 @@ pub async fn server(ctx: Context<'_>) -> Result<(), Error> {
 	on_error = "crate::helpers::acknowledge_fail"
 )]
 /// Shows information about a user
+#[tracing::instrument(
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
 pub async fn user(
 	ctx: Context<'_>,
 	#[description = "User to get information about"] user: Option<serenity::User>,
