@@ -328,6 +328,24 @@ fn check_for_config_files(main: &PathBuf, secrets: &PathBuf) {
 	}
 }
 
+#[cfg(test)]
+mod tests {
+	use super::{TelemetryConfig, build_tracer_provider};
+
+	#[test]
+	fn builds_http_otlp_tracer_provider() {
+		let config = TelemetryConfig {
+			enabled: true,
+			service_name: "test".to_owned(),
+			deployment_environment: "test".to_owned(),
+			sample_rate: 0.01,
+		};
+
+		let provider = build_tracer_provider(&config).expect("build OTLP tracer provider");
+		provider.shutdown().expect("shut down OTLP tracer provider");
+	}
+}
+
 #[derive(Snafu, Debug)]
 enum AppError {
 	#[snafu(display("problem building log appender"))]
