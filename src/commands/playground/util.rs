@@ -176,6 +176,32 @@ pub enum ResultHandling {
 	Print,
 }
 
+pub fn split_attributes_from_code(code: &str) -> (&str, &str) {
+	let mut lines = code.lines().peekable();
+
+	let mut attrs_end_point = 0;
+	let mut code_start_point = 0;
+
+	while let Some(line) = lines.peek() {
+		let trimmed = line.trim();
+		const LINE_SUBSTR_ERROR: &str = "Line borrowed from str should be a substr.";
+		if trimmed.starts_with("#![") && trimmed.ends_with("]") {
+			attrs_end_point = code.substr_range(line).expect(LINE_SUBSTR_ERROR).end;
+		} else if line.is_empty() {
+			// do nothing, maybe more crate attributes are coming
+		} else {
+			code_start_point = code.substr_range(line).expect(LINE_SUBSTR_ERROR).start;
+			break;
+		}
+
+		lines.next(); // advance iterator
+	}
+
+	let attrs = code.split_at(attrs_end_point).0;
+	let rest = code.split_at(code_start_point).1;
+	(attrs, rest)
+}
+
 pub fn hoise_crate_attributes(code: &str, after_crate_attrs: &str, after_code: &str) -> String {
 	let mut lines = code.lines().peekable();
 
@@ -223,64 +249,48 @@ pub fn maybe_wrapped(
 	unsf: bool,
 	pretty: bool,
 ) -> Cow<'_, str> {
-	#[allow(clippy::wildcard_imports)]
-	use syn::{parse::Parse, *};
+	use syn::{File, Item, ItemFn, parse_str};
 
-	// We use syn to check whether there is a main function.
-	struct Inline {}
+	// If there is a `fn main()`, return the input back unchanged
 
-	impl Parse for Inline {
-		fn parse(input: parse::ParseStream<'_>) -> Result<Self> {
-			Attribute::parse_inner(input)?;
-			let stmts = Block::parse_within(input)?;
-			for stmt in &stmts {
-				if let Stmt::Item(Item::Fn(ItemFn { sig, .. })) = stmt
-					&& sig.ident == "main"
-					&& sig.inputs.is_empty()
-				{
-					return Err(input.error("main"));
-				}
-			}
-			Ok(Self {})
-		}
+	fn item_is_main(item: &Item) -> bool {
+		let Item::Fn(ItemFn { sig, .. }) = item else {
+			return false;
+		};
+		sig.ident == "main"
+		// && sig.inputs.is_empty()
+		// I think it better to deliberately let the compiler error for this case
 	}
 
-	let Ok(Inline { .. }) = parse_str::<Inline>(code) else {
+	if let Ok(file) = parse_str::<File>(code)
+		&& file.items.iter().any(item_is_main)
+	{
 		return Cow::Borrowed(code);
+	}
+
+	// Otherwise, hoist attributes and format accordingly
+
+	let (attrs, rest) = split_attributes_from_code(code);
+
+	let formatted = match unsf {
+		true => format_args!("unsafe {{\n{rest}\n}}"),
+		false => format_args!("{rest}"),
 	};
 
-	// These string subsitutions are not quite optimal, but they perfectly preserve formatting, which is very important.
-	// This function must not change the formatting of the supplied code or it will be confusing and hard to use.
+	#[rustfmt::skip]
+	let formatted = match result_handling {
+		ResultHandling::None =>            format_args!("\n{formatted}\n"),
+		ResultHandling::Discard =>         format_args!(" let _ = {{\n{formatted}\n}}; "),
+		ResultHandling::Print if pretty => format_args!(" println!(\"{{:#?}}\", {{\n{formatted}\n}}); "),
+		ResultHandling::Print =>           format_args!(" println!(\"{{:?}}\", {{\n{formatted}\n}}); "),
+	};
 
-	// fn main boilerplate
-	let mut after_crate_attrs = match result_handling {
-		ResultHandling::None => "fn main() {\n",
-		ResultHandling::Discard => "fn main() { let _ = {\n",
-		ResultHandling::Print if pretty => "fn main() { println!(\"{:#?}\", {\n",
-		ResultHandling::Print => "fn main() { println!(\"{:?}\", {\n",
-	}
-	.to_owned();
-
-	if unsf {
-		after_crate_attrs = format!("{after_crate_attrs}unsafe {{");
-	}
-
-	// fn main boilerplate counterpart
-	let mut after_code = match result_handling {
-		ResultHandling::None => "}",
-		ResultHandling::Discard => "}; }",
-		ResultHandling::Print => "}); }",
-	}
-	.to_owned();
-
-	if unsf {
-		after_code = format!("}}{after_code}");
-	}
-
-	Cow::Owned(hoise_crate_attributes(
-		code,
-		&after_crate_attrs,
-		&after_code,
+	Cow::Owned(format!(
+		"\
+		{attrs}\n\
+		fn main() {{\
+		{formatted}\
+		}}"
 	))
 }
 
