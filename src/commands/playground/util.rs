@@ -272,25 +272,24 @@ pub fn maybe_wrapped(
 
 	let (attrs, rest) = split_attributes_from_code(code);
 
-	let formatted = match unsf {
+	let block = match unsf {
 		true => format_args!("unsafe {{\n{rest}\n}}"),
-		false => format_args!("{rest}"),
+		false => format_args!("{{\n{rest}\n}}"),
 	};
 
 	#[rustfmt::skip]
-	let formatted = match result_handling {
-		ResultHandling::None =>            format_args!("\n{formatted}\n"),
-		ResultHandling::Discard =>         format_args!(" let _ = {{\n{formatted}\n}}; "),
-		ResultHandling::Print if pretty => format_args!(" println!(\"{{:#?}}\", {{\n{formatted}\n}}); "),
-		ResultHandling::Print =>           format_args!(" println!(\"{{:?}}\", {{\n{formatted}\n}}); "),
+	let body = match result_handling {
+		ResultHandling::None if unsf =>    format_args!("{{ {block} }}"), // `fn main() { unsafe {\n...\n} }`
+		ResultHandling::None =>            block,                         // `fn main() {\n...\n}`
+		ResultHandling::Discard =>         format_args!("{{ let _ = {block}; }}"),
+		ResultHandling::Print if pretty => format_args!("{{ println!(\"{{:#?}}\", {block}); }}"),
+		ResultHandling::Print =>           format_args!("{{ println!(\"{{:?}}\", {block}); }}"),
 	};
 
 	Cow::Owned(format!(
 		"\
 		{attrs}\n\
-		fn main() {{\
-		{formatted}\
-		}}"
+		fn main() {body}"
 	))
 }
 
