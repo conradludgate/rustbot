@@ -174,6 +174,8 @@ pub enum ResultHandling {
 	Discard,
 	/// Print the result with `println!("{:?}")`
 	Print,
+	/// Print the result with `println!("{:#?}")`
+	Pretty,
 }
 
 pub fn split_attributes_from_code(code: &str) -> (&str, &str) {
@@ -239,16 +241,7 @@ pub fn hoise_crate_attributes(code: &str, after_crate_attrs: &str, after_code: &
 /// Utility used by the commands to wrap the given code in a `fn main` if not already wrapped.
 /// To check, whether a wrap was done, check if the return type is `Cow::Borrowed` vs `Cow::Owned`
 /// If a wrap was done, also hoists crate attributes to the top so they keep working
-pub fn maybe_wrap(code: &str, result_handling: ResultHandling) -> Cow<'_, str> {
-	maybe_wrapped(code, result_handling, false, false)
-}
-
-pub fn maybe_wrapped(
-	code: &str,
-	result_handling: ResultHandling,
-	unsf: bool,
-	pretty: bool,
-) -> Cow<'_, str> {
+pub fn maybe_wrapped(code: &str, result_handling: ResultHandling, unsf: bool) -> Cow<'_, str> {
 	use syn::{File, Item, ItemFn, parse_str};
 
 	// If there is a `fn main()`, return the input back unchanged
@@ -279,11 +272,11 @@ pub fn maybe_wrapped(
 
 	#[rustfmt::skip]
 	let body = match result_handling {
-		ResultHandling::None if unsf =>    format_args!("{{ {block} }}"), // `fn main() { unsafe {\n...\n} }`
-		ResultHandling::None =>            block,                         // `fn main() {\n...\n}`
-		ResultHandling::Discard =>         format_args!("{{ let _ = {block}; }}"),
-		ResultHandling::Print if pretty => format_args!("{{ println!(\"{{:#?}}\", {block}); }}"),
-		ResultHandling::Print =>           format_args!("{{ println!(\"{{:?}}\", {block}); }}"),
+		ResultHandling::None if unsf => format_args!("{{ {block} }}"), // `fn main() { unsafe {\n...\n} }`
+		ResultHandling::None =>         block,                         // `fn main() {\n...\n}`
+		ResultHandling::Discard =>      format_args!("{{ let _ = {block}; }}"),
+		ResultHandling::Pretty =>       format_args!("{{ println!(\"{{:#?}}\", {block}); }}"),
+		ResultHandling::Print =>        format_args!("{{ println!(\"{{:?}}\", {block}); }}"),
 	};
 
 	Cow::Owned(format!(
