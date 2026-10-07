@@ -5,8 +5,8 @@ use crate::types::Context;
 use super::{
 	api::{Channel, CrateType, Edition, Mode, PlayResult, PlaygroundRequest},
 	util::{
-		GenericHelp, ResultHandling, format_play_eval_stderr, generic_help, parse_flags,
-		send_reply, stub_message,
+		GenericHelp, ResultHandling, format_play_eval_stderr, generic_help, maybe_wrapped,
+		parse_flags, send_reply, stub_message,
 	},
 };
 
