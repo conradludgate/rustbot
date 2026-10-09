@@ -72,6 +72,7 @@ impl From<serenity::Client> for ShuttleSerenity {
 pub async fn serenity(
 	secret_store: SecretStore,
 	database: Option<sqlx::SqlitePool>,
+	intents: serenity::GatewayIntents,
 ) -> Result<ShuttleSerenity, Error> {
 	let token = secret_store
 		.get("DISCORD_TOKEN")
@@ -196,11 +197,6 @@ pub async fn serenity(
 			..Default::default()
 		})
 		.build();
-
-	// Don't include presence updates, as they consume a lot of memory and CPU.
-	let intents = serenity::GatewayIntents::non_privileged()
-		| serenity::GatewayIntents::GUILD_MEMBERS
-		| serenity::GatewayIntents::MESSAGE_CONTENT;
 
 	let mut http = serenity::HttpBuilder::new(&token);
 	if let Some(proxy) = std::env::var("FERRIS_DISCORD_API_PROXY")
