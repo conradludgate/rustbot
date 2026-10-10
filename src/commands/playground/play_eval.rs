@@ -35,7 +35,7 @@ async fn play_or_eval(
 	let mut result: PlayResult = ctx
 		.data()
 		.http
-		.post("https://play.rust-lang.org/execute")
+		.post(ctx.data().external_apis.playground_url("execute"))
 		.json(&PlaygroundRequest {
 			code: &code,
 			channel: flags.channel,

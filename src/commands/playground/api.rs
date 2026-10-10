@@ -234,7 +234,7 @@ pub async fn post_gist(ctx: Context<'_>, code: &str) -> Result<String, Error> {
 	let resp = ctx
 		.data()
 		.http
-		.post("https://play.rust-lang.org/meta/gist/")
+		.post(ctx.data().external_apis.playground_url("meta/gist/"))
 		.header(header::REFERER, "https://discord.gg/rust-lang-community")
 		.json(&payload)
 		.send()
@@ -277,7 +277,7 @@ pub async fn apply_online_rustfmt(
 	let result = ctx
 		.data()
 		.http
-		.post("https://play.rust-lang.org/format")
+		.post(ctx.data().external_apis.playground_url("format"))
 		.json(&FormatRequest { code, edition })
 		.send()
 		.await?

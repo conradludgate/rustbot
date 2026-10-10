@@ -61,3 +61,8 @@ tracing-log = "0.2.0"
 tracing-opentelemetry = "0.31.0"
 tracing-panic = "0.1.2"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+
+[dev-dependencies]
+insta = "1.49"
+tempfile = "3"
+wiremock = "0.6"

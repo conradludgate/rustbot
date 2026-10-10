@@ -100,3 +100,40 @@ jobs:
 
     - name: cargo test
       run: cargo test --all-targets
+
+  fauxcord-integration:
+    name: Fauxcord command snapshots
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SQLX_OFFLINE: "true"
+      INSTA_UPDATE: "no"
+      FAUXCORD_BASE_URL: http://127.0.0.1:3000
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4.3.1
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
+      with:
+        toolchain: 1.99.0
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2.9.2
+
+    - name: Run Fauxcord integration snapshots
+      run: |
+        set -eu
+        project=rustbot-ci
+        cleanup() {
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            docker compose --file compose.local.yaml --project-name "$project" logs --no-color || true
+          fi
+          docker compose --file compose.local.yaml --project-name "$project" down --volumes || true
+          exit "$status"
+        }
+        trap cleanup EXIT
+        docker compose --file compose.local.yaml --project-name "$project" up --detach --wait discord-mock
+        FAUXCORD_URL=http://127.0.0.1:3000 \
+          cargo test --locked --test fauxcord_snapshots -- --ignored --test-threads=8

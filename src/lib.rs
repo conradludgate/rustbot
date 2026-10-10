@@ -9,6 +9,7 @@
 )]
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,7 +19,7 @@ use poise::serenity_prelude::{self as serenity, ChannelType, Permissions};
 use tracing::{debug, info, warn};
 
 use crate::commands::modmail::{create_modmail_thread, load_or_create_modmail_message};
-use crate::types::Data;
+use crate::types::{Data, ExternalApiBases};
 
 const FAILED_CODEBLOCK: &str = "\\
 Missing code block. Please use the following markdown:
@@ -67,6 +68,38 @@ pub async fn serenity(
 	database: Option<sqlx::SqlitePool>,
 	intents: serenity::GatewayIntents,
 ) -> Result<ShuttleSerenity, Error> {
+	let config = BotConfig {
+		secret_store,
+		database,
+		intents,
+		discord_api_proxy: std::env::var("FERRIS_DISCORD_API_PROXY")
+			.ok()
+			.filter(|proxy| !proxy.trim().is_empty()),
+		external_apis: ExternalApiBases::from_env(),
+		server_icon_directory: PathBuf::from("assets/server-icons"),
+	};
+	Ok(build_bot(config).await?.into())
+}
+
+/// Configuration for constructing a bot without reading files or environment variables.
+pub struct BotConfig {
+	pub secret_store: SecretStore,
+	pub database: Option<sqlx::SqlitePool>,
+	pub intents: serenity::GatewayIntents,
+	pub discord_api_proxy: Option<String>,
+	pub external_apis: ExternalApiBases,
+	pub server_icon_directory: PathBuf,
+}
+
+pub async fn build_bot(config: BotConfig) -> Result<serenity::Client, Error> {
+	let BotConfig {
+		secret_store,
+		database,
+		intents,
+		discord_api_proxy,
+		external_apis,
+		server_icon_directory,
+	} = config;
 	let token = secret_store
 		.get("DISCORD_TOKEN")
 		.expect("Couldn't find your DISCORD_TOKEN!");
@@ -85,7 +118,13 @@ pub async fn serenity(
 	let framework = poise::Framework::builder()
 		.setup(move |ctx, ready, framework| {
 			Box::pin(async move {
-				let data = Data::new(&secret_store, database).await?;
+				let data = Data::new(
+					&secret_store,
+					database,
+					external_apis,
+					server_icon_directory,
+				)
+				.await?;
 
 				info!(
 					"Registering {} commands...",
@@ -194,10 +233,7 @@ pub async fn serenity(
 		.build();
 
 	let mut http = serenity::HttpBuilder::new(&token);
-	if let Some(proxy) = std::env::var("FERRIS_DISCORD_API_PROXY")
-		.ok()
-		.filter(|proxy| !proxy.trim().is_empty())
-	{
+	if let Some(proxy) = discord_api_proxy {
 		// Serenity's rate-limited request path does not apply its HTTP proxy.
 		// Proxies are expected to own rate limiting when one is configured.
 		http = http.proxy(proxy).ratelimiter_disabled(true);
@@ -208,7 +244,7 @@ pub async fn serenity(
 		.await
 		.map_err(|e| anyhow!(e))?;
 
-	Ok(client.into())
+	Ok(client)
 }
 
 fn build_command_list(enable_database: bool) -> Vec<poise::Command<Data, Error>> {

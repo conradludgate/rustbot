@@ -1,0 +1,9 @@
+---
+source: tests/fauxcord_snapshots.rs
+expression: response.reply
+---
+```x86asm
+add_one:
+        lea     eax, [rdi + 1]
+        ret
+```

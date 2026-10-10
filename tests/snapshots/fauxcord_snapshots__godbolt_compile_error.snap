@@ -1,0 +1,16 @@
+---
+source: tests/fauxcord_snapshots.rs
+expression: response.reply
+---
+```ansi
+[1m[91merror[0m[1m: this file contains an unclosed delimiter[0m
+ [1m[94m--> [0m<source>:1:25
+  [1m[94m|[0m
+[1m[94m1[0m [1m[94m|[0m pub fn add_one( -> u32 {
+  [1m[94m|[0m               [1m[94m-[0m        [1m[94m-[0m[1m[91m^[0m
+  [1m[94m|[0m               [1m[94m|[0m        [1m[94m|[0m
+  [1m[94m|[0m               [1m[94m|[0m        [1m[94munclosed delimiter[0m
+  [1m[94m|[0m               [1m[94munclosed delimiter[0m
+
+[1m[91merror[0m[1m: aborting due to 1 previous error[0m
+```Compilation failed.

@@ -1,0 +1,7 @@
+---
+source: tests/fauxcord_snapshots.rs
+expression: response.reply
+---
+```rust
+service unavailable
+```

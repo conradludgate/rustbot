@@ -59,6 +59,11 @@ To run migrations inside the container instead of locally, you can use `docker c
 
 If you need to access the container directly, you can use `docker compose run --rm --entrypoint /bin/sh ferris`.
 
+## Local development and tests
+
+- [Local Discord and tracing stack](local-test/README.md): run the bot with Fauxcord and Jaeger.
+- [Command integration tests](tests/README.md): run Rust tests, review snapshots, and refresh API fixtures.
+
 ## Credits
 
 This codebase has its roots in [rust-lang/discord-mods-bot](https://github.com/rust-lang/discord-mods-bot/), the Discord bot running on the official Rust server.

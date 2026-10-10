@@ -7,7 +7,8 @@ services:
       HOST: 0.0.0.0
       DB_PATH: /data/mock.db
       UPLOAD_PATH: /data/uploads
-      BASE_URL: http://discord-mock:3000
+      # Host tests override this so their bot processes can reach the Gateway.
+      BASE_URL: ${FAUXCORD_BASE_URL:-http://discord-mock:3000}
       LOG_LEVEL: info
       DISABLE_AUTH: "false"
       LATENCY_MS: "0"

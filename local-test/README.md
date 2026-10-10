@@ -1,18 +1,29 @@
 # Local Discord and tracing stack
 
-This stack runs Ferrisbot against Fauxcord, a local Discord REST API and Gateway mock, and sends sampled traces to Jaeger. It uses a fake bot token and isolated Docker volumes; it does not use the production Discord credentials or database.
+Run Ferrisbot against Fauxcord (a local Discord REST API and Gateway mock) and
+Jaeger using a fake bot token and isolated Docker volumes. Interactive
+Playground and Godbolt commands contact the public APIs.
 
-Start everything from the repository root:
+For Rust integration tests, snapshot review, and API fixture refreshes, see
+[the test guide](../tests/README.md).
+
+## Start the stack
+
+Run from the repository root:
 
 ```sh
 docker compose -f compose.local.yaml up --build
 ```
 
-Open Jaeger at <http://localhost:16686>. Look for the `ferrisbot-local` service. Sampling is set to 100% in `local-test/config/ferris.toml` so local command traces are easy to find.
-The log filter keeps application `INFO` spans and suppresses Serenity spans, avoiding a trace that grows for the lifetime of the Gateway shard.
-Command spans use names based on the invoked command, such as `discord.command.uptime` or `discord.command.tags.create`; the `command` attribute records the runtime-qualified command name as well.
+Configuration is in `local-test/config/`. Open Jaeger at
+<http://localhost:16686> and select the `ferrisbot-local` service. Sampling is
+set to 100%; the log filter keeps application `INFO` spans and suppresses
+Serenity spans. Command spans are named `discord.command.<command>`, with the
+invoked command name in the `command` attribute.
 
-To inject a `?uptime` message into the mock `general` channel and exercise a traced command, register a fake user and send a Gateway message:
+## Send a command
+
+Register a fake user and send `?uptime` to the mock `general` channel:
 
 ```sh
 tester_id=$(curl -fsS -X POST http://localhost:3000/_test/users \
@@ -24,18 +35,21 @@ curl -fsS -X POST http://localhost:3000/_test/channels/1234567890123456789/messa
   -d "{\"content\":\"?uptime\",\"author\":{\"id\":\"${tester_id}\"}}"
 ```
 
-The public server icon commands can be checked against Fauxcord with:
+To exercise moderator controls, give the fake member the `MOD_ROLE_ID` from
+`local-test/config/ferris.secrets.toml`, then send `?server_icon pause`,
+`?server_icon resume`, or `?server_icon set owo` to the same channel.
+
+## Stop or reset
 
 ```sh
-./local-test/test-server-icon.sh
+docker compose -f compose.local.yaml down
 ```
 
-The script registers a fake member without roles, verifies that `pause` is
-denied, invokes `?server_icon status` and `?server_icon list`, and checks for
-the reply and the raw GitHub image links.
-Moderator controls can be exercised by giving that mock member the role ID in
-`local-test/config/ferris.secrets.toml` (`MOD_ROLE_ID`), then sending
-`?server_icon pause`, `?server_icon resume`, and `?server_icon set owo` to the
-same test channel.
+To also remove this stack's database and mock state:
 
-Stop the stack with `docker compose -f compose.local.yaml down`. Its data volumes are separate from the regular Compose setup. To reset only this local test state, remove the volumes for this Compose project with `docker compose -f compose.local.yaml down --volumes`.
+```sh
+docker compose -f compose.local.yaml down --volumes
+```
+
+The local stack and the integration test service both bind port 3000. Stop one
+before starting the other. Their Compose projects use separate data volumes.

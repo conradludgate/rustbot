@@ -1,6 +1,6 @@
 use std::{
 	collections::HashMap,
-	path::PathBuf,
+	path::{Path, PathBuf},
 	sync::Arc,
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -17,7 +17,6 @@ use tracing::{Instrument, info, warn};
 
 use crate::types::Context;
 
-const ICON_DIRECTORY: &str = "assets/server-icons";
 const GITHUB_ICON_URL: &str =
 	"https://github.com/conradludgate/rustbot/blob/main/assets/server-icons/";
 const ICON_CHANGE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -41,6 +40,7 @@ struct RotationState {
 
 #[derive(Debug)]
 pub struct ServerIconRotation {
+	icon_directory: PathBuf,
 	pool: SqlitePool,
 	guild_id: serenity::GuildId,
 	wake: Arc<Notify>,
@@ -50,8 +50,9 @@ pub struct ServerIconRotation {
 
 impl ServerIconRotation {
 	#[must_use]
-	pub fn new(pool: SqlitePool, guild_id: serenity::GuildId) -> Self {
+	pub fn new(pool: SqlitePool, guild_id: serenity::GuildId, icon_directory: PathBuf) -> Self {
 		Self {
+			icon_directory,
 			pool,
 			guild_id,
 			wake: Arc::new(Notify::new()),
@@ -66,6 +67,7 @@ impl ServerIconRotation {
 			return;
 		}
 
+		let icon_directory = self.icon_directory.clone();
 		let pool = self.pool.clone();
 		let guild_id = self.guild_id;
 		let wake = self.wake.clone();
@@ -75,7 +77,7 @@ impl ServerIconRotation {
 			"Starting server icon rotation worker"
 		);
 		*worker = Some(tokio::spawn(async move {
-			run_rotation_worker(http, pool, guild_id, wake, operation_lock).await;
+			run_rotation_worker(http, pool, guild_id, wake, operation_lock, icon_directory).await;
 		}));
 	}
 
@@ -139,7 +141,7 @@ impl ServerIconRotation {
 		ctx: &impl serenity::CacheHttp,
 		suffix: &str,
 	) -> Result<IconChoice, Error> {
-		let choices = icon_choices().await?;
+		let choices = icon_choices(&self.icon_directory).await?;
 		let Some(choice) = choices.into_iter().find(|choice| choice.suffix == suffix) else {
 			bail!("Unknown icon `{suffix}`. Use `/server_icon list` to see the available names.");
 		};
@@ -153,7 +155,7 @@ impl ServerIconRotation {
 			.await
 			.context("Failed to save the requested server icon")?;
 
-		match apply_icon(ctx, self.guild_id, &choice.path).await {
+		match apply_icon(ctx, self.guild_id, &choice.path, &self.icon_directory).await {
 			Ok(()) => {
 				complete_pending_icon(
 					&self.pool,
@@ -175,6 +177,14 @@ impl ServerIconRotation {
 	}
 }
 
+impl Drop for ServerIconRotation {
+	fn drop(&mut self) {
+		if let Some(worker) = self.worker.get_mut().take() {
+			worker.abort();
+		}
+	}
+}
+
 #[derive(Debug)]
 pub struct RotationStatus {
 	pub paused: bool,
@@ -188,6 +198,7 @@ async fn run_rotation_worker(
 	guild_id: serenity::GuildId,
 	wake: Arc<Notify>,
 	operation_lock: Arc<Mutex<()>>,
+	icon_directory: PathBuf,
 ) {
 	let mut consecutive_failures = 0u32;
 	loop {
@@ -210,7 +221,7 @@ async fn run_rotation_worker(
 				requested_icon = tracing::field::Empty,
 				icon.path = tracing::field::Empty,
 			);
-			match process_due_icon(&http, &pool, guild_id)
+			match process_due_icon(&http, &pool, guild_id, &icon_directory)
 				.instrument(span)
 				.await
 			{
@@ -252,14 +263,20 @@ async fn process_due_icon(
 	http: &impl serenity::CacheHttp,
 	pool: &SqlitePool,
 	guild_id: serenity::GuildId,
+	icon_directory: &Path,
 ) -> Result<bool, Error> {
 	let state = ensure_state(pool, guild_id).await?;
 	let path = if let Some(path) = state.pending_icon_path.clone() {
 		path
 	} else if state.paused_at.is_none() && state.next_rotation_at <= now_seconds() {
-		choose_random_icon(state.current_icon_path.as_deref())
+		choose_random_icon(icon_directory, state.current_icon_path.as_deref())
 			.await?
-			.ok_or_else(|| anyhow!("No server icons are available in {ICON_DIRECTORY}"))?
+			.ok_or_else(|| {
+				anyhow!(
+					"No server icons are available in {}",
+					icon_directory.display()
+				)
+			})?
 	} else {
 		return Ok(false);
 	};
@@ -275,7 +292,7 @@ async fn process_due_icon(
 			.context("Failed to save the next server icon")?;
 	}
 
-	apply_icon(http, guild_id, &path).await?;
+	apply_icon(http, guild_id, &path, icon_directory).await?;
 	complete_pending_icon(pool, guild_id, &path, state.paused_at.is_some()).await?;
 	Ok(true)
 }
@@ -323,8 +340,9 @@ async fn apply_icon(
 	ctx: &impl serenity::CacheHttp,
 	guild_id: serenity::GuildId,
 	path: &str,
+	icon_directory: &Path,
 ) -> Result<(), Error> {
-	let catalog = icon_choices().await?;
+	let catalog = icon_choices(icon_directory).await?;
 	if !catalog.iter().any(|choice| choice.path == path) {
 		bail!("The saved server icon path `{path}` is not in the icon catalog");
 	}
@@ -386,10 +404,10 @@ async fn load_state(
 }
 
 #[tracing::instrument(name = "filesystem.list_server_icons", err(Debug))]
-async fn icon_choices() -> Result<Vec<IconChoice>, Error> {
-	let mut entries = tokio::fs::read_dir(ICON_DIRECTORY)
+async fn icon_choices(icon_directory: &Path) -> Result<Vec<IconChoice>, Error> {
+	let mut entries = tokio::fs::read_dir(icon_directory)
 		.await
-		.with_context(|| format!("Failed to read {ICON_DIRECTORY}"))?;
+		.with_context(|| format!("Failed to read {}", icon_directory.display()))?;
 	let mut raw = Vec::new();
 	while let Some(entry) = entries.next_entry().await? {
 		let path = entry.path();
@@ -443,7 +461,10 @@ async fn icon_choices() -> Result<Vec<IconChoice>, Error> {
 			};
 			IconChoice {
 				suffix,
-				path: format!("{ICON_DIRECTORY}/{filename}"),
+				path: icon_directory
+					.join(&filename)
+					.to_string_lossy()
+					.into_owned(),
 				filename,
 			}
 		})
@@ -452,8 +473,11 @@ async fn icon_choices() -> Result<Vec<IconChoice>, Error> {
 	Ok(choices)
 }
 
-async fn choose_random_icon(current_path: Option<&str>) -> Result<Option<String>, Error> {
-	let mut choices = icon_choices().await?;
+async fn choose_random_icon(
+	icon_directory: &Path,
+	current_path: Option<&str>,
+) -> Result<Option<String>, Error> {
+	let mut choices = icon_choices(icon_directory).await?;
 	if choices.len() > 1 {
 		choices.retain(|choice| Some(choice.path.as_str()) != current_path);
 	}
@@ -585,7 +609,7 @@ pub async fn server_icon_status(ctx: Context<'_>) -> Result<(), Error> {
 	err(Debug),
 )]
 pub async fn server_icon_list(ctx: Context<'_>) -> Result<(), Error> {
-	let choices = icon_choices().await?;
+	let choices = icon_choices(&ctx.data().server_icon_directory).await?;
 	if choices.is_empty() {
 		ctx.say("No server icons are available.").await?;
 		return Ok(());
@@ -718,7 +742,7 @@ fn icon_service(ctx: Context<'_>) -> Result<&Arc<ServerIconRotation>, Error> {
 
 #[cfg(test)]
 mod tests {
-	use std::collections::HashSet;
+	use std::{collections::HashSet, path::Path};
 
 	use poise::serenity_prelude::GuildId;
 	use sqlx::sqlite::SqlitePoolOptions;
@@ -728,7 +752,9 @@ mod tests {
 
 	#[tokio::test]
 	async fn icon_catalog_has_unique_suffixes_and_paths() {
-		let choices = icon_choices().await.unwrap();
+		let choices = icon_choices(Path::new("assets/server-icons"))
+			.await
+			.unwrap();
 		let suffixes = choices
 			.iter()
 			.map(|choice| &choice.suffix)

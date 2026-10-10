@@ -1,0 +1,1 @@
+{"success":true,"exitDetail":"Exited with status 0","stdout":"first: 0.0ns ± 0.0\nsecond: 0.0ns ± 0.0\n","stderr":"   Compiling playground v0.0.1 (/playground)\n    Finished `release` profile [optimized] target(s) in 0.52s\n     Running `target/release/playground`\n"}
