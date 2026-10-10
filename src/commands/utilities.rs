@@ -699,6 +699,19 @@ pub async fn run_prefix_command(
 	// This command shouldn't exist, but Discord decided we can't read
 	// every message ever.
 
+	// Prevent a user from triggering another user's message.
+	// Not checking for this would allow running old messages from any user.
+	if ctx.author().id != message.author.id {
+		ctx.send(
+			poise::CreateReply::default()
+				.content("cannot run command from another user")
+				.ephemeral(true),
+		)
+		.await?;
+
+		return Ok(());
+	}
+
 	let data = Mutex::new(Box::new(()) as _);
 	let mut parents = Vec::new();
 
