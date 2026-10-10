@@ -18,7 +18,11 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/_mock/health"]
+      test:
+        [
+          "CMD-SHELL",
+          "env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy wget -qO- http://127.0.0.1:3000/_mock/health",
+        ]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -42,6 +46,8 @@ services:
     environment:
       FERRIS_DISCORD_API_PROXY: http://discord-mock:3000
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      NO_PROXY: localhost,127.0.0.1,discord-mock,jaeger
+      no_proxy: localhost,127.0.0.1,discord-mock,jaeger
       # Ferrisbot currently gates OTLP initialization on this being non-empty;
       # Jaeger does not require or validate this local-only placeholder.
       OTEL_EXPORTER_OTLP_HEADERS: Authorization=local-test-only

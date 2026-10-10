@@ -7,7 +7,7 @@ use anyhow::{Error, Result};
 use poise::serenity_prelude as serenity;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_tracing::TracingMiddleware;
-use tokio::sync::{Mutex as AsyncMutex, RwLock};
+use tokio::sync::RwLock;
 
 use crate::{SecretStore, commands};
 
@@ -27,7 +27,7 @@ pub struct Data {
 	pub http: ClientWithMiddleware,
 	pub godbolt_metadata: StdMutex<commands::godbolt::GodboltMetadata>,
 	pub move_channel_locks: StdMutex<HashSet<serenity::ChannelId>>,
-	pub server_icon_changer: AsyncMutex<Option<tokio::task::JoinHandle<()>>>,
+	pub server_icon_rotation: Option<Arc<commands::server_icon::ServerIconRotation>>,
 }
 
 impl Data {
@@ -35,10 +35,17 @@ impl Data {
 		secret_store: &SecretStore,
 		database: Option<sqlx::SqlitePool>,
 	) -> Result<Self> {
+		let discord_guild_id = secret_store.get_discord_id("DISCORD_GUILD")?.into();
+		let server_icon_rotation = database.clone().map(|pool| {
+			Arc::new(commands::server_icon::ServerIconRotation::new(
+				pool,
+				discord_guild_id,
+			))
+		});
 		Ok(Self {
 			highlights: RwLock::new(commands::highlight::RegexHolder::new(database.as_ref()).await),
 			database,
-			discord_guild_id: secret_store.get_discord_id("DISCORD_GUILD")?.into(),
+			discord_guild_id,
 			application_id: secret_store.get_discord_id("APPLICATION_ID")?.into(),
 			mod_role_id: secret_store.get_discord_id("MOD_ROLE_ID")?.into(),
 			mod_consultant_role_id: secret_store
@@ -54,7 +61,7 @@ impl Data {
 				.build(),
 			godbolt_metadata: StdMutex::new(commands::godbolt::GodboltMetadata::default()),
 			move_channel_locks: StdMutex::new(HashSet::new()),
-			server_icon_changer: AsyncMutex::new(None),
+			server_icon_rotation,
 		})
 	}
 }

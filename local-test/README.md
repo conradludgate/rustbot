@@ -24,4 +24,18 @@ curl -fsS -X POST http://localhost:3000/_test/channels/1234567890123456789/messa
   -d "{\"content\":\"?uptime\",\"author\":{\"id\":\"${tester_id}\"}}"
 ```
 
+The public server icon commands can be checked against Fauxcord with:
+
+```sh
+./local-test/test-server-icon.sh
+```
+
+The script registers a fake member without roles, verifies that `pause` is
+denied, invokes `?server_icon status` and `?server_icon list`, and checks for
+the reply and the raw GitHub image links.
+Moderator controls can be exercised by giving that mock member the role ID in
+`local-test/config/ferris.secrets.toml` (`MOD_ROLE_ID`), then sending
+`?server_icon pause`, `?server_icon resume`, and `?server_icon set owo` to the
+same test channel.
+
 Stop the stack with `docker compose -f compose.local.yaml down`. Its data volumes are separate from the regular Compose setup. To reset only this local test state, remove the volumes for this Compose project with `docker compose -f compose.local.yaml down --volumes`.

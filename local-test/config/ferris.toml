@@ -1,5 +1,5 @@
 [database]
-disabled = true
+disabled = false
 url = "sqlite://database/ferris.sqlite3"
 
 [gateway]
