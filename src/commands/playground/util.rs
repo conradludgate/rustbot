@@ -343,23 +343,25 @@ pub async fn send_reply(
 		})
 		.await?;
 
-	if let Some(retry_pressed) = response
-		.message()
-		.await?
-		.await_component_interaction(ctx)
-		.filter(move |mci: &ComponentInteraction| mci.data.custom_id == custom_id)
-		.timeout(std::time::Duration::from_mins(10))
-		.await
-	{
-		retry_pressed.defer(&ctx).await?;
-		ctx.rerun().await?;
-	} else {
-		// If timed out, just remove the button
-		// Errors are ignored in case the reply was deleted
-		let _ = response
-			// TODO: Add code to remove button
-			.edit(ctx, poise::CreateReply::default())
-			.await;
+	// Only timeout replies have a Retry button; waiting otherwise keeps command spans open.
+	if timeout {
+		if let Some(retry_pressed) = response
+			.message()
+			.await?
+			.await_component_interaction(ctx)
+			.filter(move |mci: &ComponentInteraction| mci.data.custom_id == custom_id)
+			.timeout(std::time::Duration::from_mins(10))
+			.await
+		{
+			retry_pressed.defer(&ctx).await?;
+			ctx.rerun().await?;
+		} else {
+			// If timed out, just remove the button
+			// Errors are ignored in case the reply was deleted
+			let _ = response
+				.edit(ctx, poise::CreateReply::default())
+				.await;
+		}
 	}
 
 	Ok(())
