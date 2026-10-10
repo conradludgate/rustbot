@@ -179,6 +179,8 @@ pub enum ResultHandling {
 }
 
 pub fn split_attributes_from_code(code: &str) -> (&str, &str) {
+	const LINE_SUBSTR_ERROR: &str = "Line borrowed from str should be a substr.";
+
 	let mut lines = code.lines().peekable();
 
 	let mut attrs_end_point = 0;
@@ -186,8 +188,7 @@ pub fn split_attributes_from_code(code: &str) -> (&str, &str) {
 
 	while let Some(line) = lines.peek() {
 		let trimmed = line.trim();
-		const LINE_SUBSTR_ERROR: &str = "Line borrowed from str should be a substr.";
-		if trimmed.starts_with("#![") && trimmed.ends_with("]") {
+		if trimmed.starts_with("#![") && trimmed.ends_with(']') {
 			attrs_end_point = code.substr_range(line).expect(LINE_SUBSTR_ERROR).end;
 		} else if line.is_empty() {
 			// do nothing, maybe more crate attributes are coming
@@ -265,9 +266,10 @@ pub fn maybe_wrapped(code: &str, result_handling: ResultHandling, unsf: bool) ->
 
 	let (attrs, rest) = split_attributes_from_code(code);
 
-	let block = match unsf {
-		true => format_args!("unsafe {{\n{rest}\n}}"),
-		false => format_args!("{{\n{rest}\n}}"),
+	let block = if unsf {
+		format_args!("unsafe {{\n{rest}\n}}")
+	} else {
+		format_args!("{{\n{rest}\n}}")
 	};
 
 	#[rustfmt::skip]
