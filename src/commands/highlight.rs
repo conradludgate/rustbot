@@ -222,6 +222,12 @@ mod database {
 	use sqlx::{Pool, Sqlite};
 
 	/// Adds a highlight for a user.
+	#[tracing::instrument(
+		name = "db.highlights.add",
+		skip_all,
+		fields(user.id = user_id.get()),
+		err(Debug),
+	)]
 	pub async fn highlight_add(
 		pool: &Pool<Sqlite>,
 		user_id: UserId,
@@ -246,6 +252,12 @@ mod database {
 	}
 
 	/// Removes a highlight by ID for a specific user.
+	#[tracing::instrument(
+		name = "db.highlights.remove",
+		skip_all,
+		fields(user.id = user_id.get()),
+		err(Debug),
+	)]
 	pub async fn highlight_remove(
 		pool: &Pool<Sqlite>,
 		user_id: UserId,
@@ -266,6 +278,12 @@ mod database {
 	}
 
 	/// Gets all highlights for a specific user.
+	#[tracing::instrument(
+		name = "db.highlights.get",
+		skip_all,
+		fields(user.id = user_id.get()),
+		err(Debug),
+	)]
 	pub async fn highlight_get(
 		pool: &Pool<Sqlite>,
 		user_id: UserId,
@@ -289,6 +307,7 @@ mod database {
 	}
 
 	/// Gets all highlights from all users.
+	#[tracing::instrument(name = "db.highlights.get_all", skip_all, err(Debug))]
 	pub async fn highlight_get_all(pool: &Pool<Sqlite>) -> Result<Vec<(i64, String)>, Error> {
 		let rows = sqlx::query!("select member_id, highlight from highlights")
 			.fetch_all(pool)

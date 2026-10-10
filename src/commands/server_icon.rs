@@ -79,6 +79,7 @@ impl ServerIconRotation {
 		}));
 	}
 
+	#[tracing::instrument(name = "server_icon_rotation.status", skip_all, err(Debug))]
 	async fn status(&self) -> Result<RotationStatus, Error> {
 		let state = ensure_state(&self.pool, self.guild_id).await?;
 		Ok(RotationStatus {
@@ -88,6 +89,7 @@ impl ServerIconRotation {
 		})
 	}
 
+	#[tracing::instrument(name = "server_icon_rotation.pause", skip_all, err(Debug))]
 	async fn pause(&self) -> Result<bool, Error> {
 		let _lock = self.operation_lock.lock().await;
 		let state = ensure_state(&self.pool, self.guild_id).await?;
@@ -105,6 +107,7 @@ impl ServerIconRotation {
 		Ok(true)
 	}
 
+	#[tracing::instrument(name = "server_icon_rotation.resume", skip_all, err(Debug))]
 	async fn resume(&self) -> Result<bool, Error> {
 		let _lock = self.operation_lock.lock().await;
 		let state = ensure_state(&self.pool, self.guild_id).await?;
@@ -125,6 +128,12 @@ impl ServerIconRotation {
 		Ok(true)
 	}
 
+	#[tracing::instrument(
+		name = "server_icon_rotation.set_icon",
+		skip_all,
+		fields(icon.suffix = %suffix),
+		err(Debug),
+	)]
 	async fn set_icon(
 		&self,
 		ctx: &impl serenity::CacheHttp,
@@ -233,6 +242,12 @@ async fn run_rotation_worker(
 	}
 }
 
+#[tracing::instrument(
+	name = "server_icon_rotation.process_due_icon",
+	skip_all,
+	fields(guild.id = guild_id.get()),
+	err(Debug),
+)]
 async fn process_due_icon(
 	http: &impl serenity::CacheHttp,
 	pool: &SqlitePool,
@@ -265,6 +280,12 @@ async fn process_due_icon(
 	Ok(true)
 }
 
+#[tracing::instrument(
+	name = "db.server_icon_rotation.complete_pending",
+	skip_all,
+	fields(guild.id = guild_id.get(), icon.path = %path),
+	err(Debug),
+)]
 async fn complete_pending_icon(
 	pool: &SqlitePool,
 	guild_id: serenity::GuildId,
@@ -308,7 +329,9 @@ async fn apply_icon(
 		bail!("The saved server icon path `{path}` is not in the icon catalog");
 	}
 	let timeout_result = tokio::time::timeout(ICON_CHANGE_TIMEOUT, async {
-		let attachment = serenity::CreateAttachment::path(path).await?;
+		let attachment = serenity::CreateAttachment::path(path)
+			.instrument(tracing::info_span!("filesystem.read_server_icon", file.path = %path))
+			.await?;
 		guild_id
 			.edit(ctx, serenity::EditGuild::new().icon(Some(&attachment)))
 			.await?;
@@ -321,6 +344,12 @@ async fn apply_icon(
 	}
 }
 
+#[tracing::instrument(
+	name = "db.server_icon_rotation.ensure_state",
+	skip_all,
+	fields(guild.id = guild_id.get()),
+	err(Debug),
+)]
 async fn ensure_state(
 	pool: &SqlitePool,
 	guild_id: serenity::GuildId,
@@ -336,6 +365,12 @@ async fn ensure_state(
 	load_state(pool, guild_id).await
 }
 
+#[tracing::instrument(
+	name = "db.server_icon_rotation.load_state",
+	skip_all,
+	fields(guild.id = guild_id.get()),
+	err(Debug),
+)]
 async fn load_state(
 	pool: &SqlitePool,
 	guild_id: serenity::GuildId,
@@ -350,6 +385,7 @@ async fn load_state(
 	.context("Failed to read server icon rotation state")
 }
 
+#[tracing::instrument(name = "filesystem.list_server_icons", err(Debug))]
 async fn icon_choices() -> Result<Vec<IconChoice>, Error> {
 	let mut entries = tokio::fs::read_dir(ICON_DIRECTORY)
 		.await
