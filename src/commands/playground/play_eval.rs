@@ -1,4 +1,5 @@
 use anyhow::Error;
+use tracing::Instrument as _;
 
 use crate::types::Context;
 
@@ -18,14 +19,19 @@ async fn play_or_eval(
 	code: poise::CodeBlock,
 	result_handling: ResultHandling,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
-	let code = maybe_wrapped(
-		&code.code,
-		result_handling,
-		ctx.prefix().contains("Sweat"),
-		ctx.prefix().contains("OwO") || ctx.prefix().contains("Cat"),
-	);
+	let result_handling = match result_handling {
+		ResultHandling::Print if ctx.prefix().contains("OwO") || ctx.prefix().contains("Cat") => {
+			ResultHandling::Pretty
+		}
+		handling => handling,
+	};
+	let unsf = ctx.prefix().contains("Sweat");
+
+	let code = maybe_wrapped(&code.code, result_handling, unsf);
 	let (mut flags, flag_parse_errors) = parse_flags(flags);
 
 	if force_warnings {

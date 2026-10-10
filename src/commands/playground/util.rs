@@ -1,5 +1,6 @@
 use core::fmt::Write as _;
 use std::borrow::Cow;
+use tracing::Instrument as _;
 
 use poise::serenity_prelude as serenity;
 use serenity::ComponentInteraction;
@@ -174,6 +175,35 @@ pub enum ResultHandling {
 	Discard,
 	/// Print the result with `println!("{:?}")`
 	Print,
+	/// Print the result with `println!("{:#?}")`
+	Pretty,
+}
+
+pub fn split_attributes_from_code(code: &str) -> (&str, &str) {
+	const LINE_SUBSTR_ERROR: &str = "Line borrowed from str should be a substr.";
+
+	let mut lines = code.lines().peekable();
+
+	let mut attrs_end_point = 0;
+	let mut code_start_point = 0;
+
+	while let Some(line) = lines.peek() {
+		let trimmed = line.trim();
+		if trimmed.starts_with("#![") && trimmed.ends_with(']') {
+			attrs_end_point = code.substr_range(line).expect(LINE_SUBSTR_ERROR).end;
+		} else if line.is_empty() {
+			// do nothing, maybe more crate attributes are coming
+		} else {
+			code_start_point = code.substr_range(line).expect(LINE_SUBSTR_ERROR).start;
+			break;
+		}
+
+		lines.next(); // advance iterator
+	}
+
+	let attrs = code.split_at(attrs_end_point).0;
+	let rest = code.split_at(code_start_point).1;
+	(attrs, rest)
 }
 
 pub fn hoise_crate_attributes(code: &str, after_crate_attrs: &str, after_code: &str) -> String {
@@ -213,74 +243,49 @@ pub fn hoise_crate_attributes(code: &str, after_crate_attrs: &str, after_code: &
 /// Utility used by the commands to wrap the given code in a `fn main` if not already wrapped.
 /// To check, whether a wrap was done, check if the return type is `Cow::Borrowed` vs `Cow::Owned`
 /// If a wrap was done, also hoists crate attributes to the top so they keep working
-pub fn maybe_wrap(code: &str, result_handling: ResultHandling) -> Cow<'_, str> {
-	maybe_wrapped(code, result_handling, false, false)
-}
+pub fn maybe_wrapped(code: &str, result_handling: ResultHandling, unsf: bool) -> Cow<'_, str> {
+	use syn::{File, Item, ItemFn, parse_str};
 
-pub fn maybe_wrapped(
-	code: &str,
-	result_handling: ResultHandling,
-	unsf: bool,
-	pretty: bool,
-) -> Cow<'_, str> {
-	#[allow(clippy::wildcard_imports)]
-	use syn::{parse::Parse, *};
+	// If there is a `fn main()`, return the input back unchanged
 
-	// We use syn to check whether there is a main function.
-	struct Inline {}
-
-	impl Parse for Inline {
-		fn parse(input: parse::ParseStream<'_>) -> Result<Self> {
-			Attribute::parse_inner(input)?;
-			let stmts = Block::parse_within(input)?;
-			for stmt in &stmts {
-				if let Stmt::Item(Item::Fn(ItemFn { sig, .. })) = stmt
-					&& sig.ident == "main"
-					&& sig.inputs.is_empty()
-				{
-					return Err(input.error("main"));
-				}
-			}
-			Ok(Self {})
-		}
+	fn item_is_main(item: &Item) -> bool {
+		let Item::Fn(ItemFn { sig, .. }) = item else {
+			return false;
+		};
+		sig.ident == "main"
+		// && sig.inputs.is_empty()
+		// I think it better to deliberately let the compiler error for this case
 	}
 
-	let Ok(Inline { .. }) = parse_str::<Inline>(code) else {
+	if let Ok(file) = parse_str::<File>(code)
+		&& file.items.iter().any(item_is_main)
+	{
 		return Cow::Borrowed(code);
+	}
+
+	// Otherwise, hoist attributes and format accordingly
+
+	let (attrs, rest) = split_attributes_from_code(code);
+
+	let block = if unsf {
+		format_args!("unsafe {{\n{rest}\n}}")
+	} else {
+		format_args!("{{\n{rest}\n}}")
 	};
 
-	// These string subsitutions are not quite optimal, but they perfectly preserve formatting, which is very important.
-	// This function must not change the formatting of the supplied code or it will be confusing and hard to use.
+	#[rustfmt::skip]
+	let body = match result_handling {
+		ResultHandling::None if unsf => format_args!("{{ {block} }}"), // `fn main() { unsafe {\n...\n} }`
+		ResultHandling::None =>         block,                         // `fn main() {\n...\n}`
+		ResultHandling::Discard =>      format_args!("{{ let _ = {block}; }}"),
+		ResultHandling::Pretty =>       format_args!("{{ println!(\"{{:#?}}\", {block}); }}"),
+		ResultHandling::Print =>        format_args!("{{ println!(\"{{:?}}\", {block}); }}"),
+	};
 
-	// fn main boilerplate
-	let mut after_crate_attrs = match result_handling {
-		ResultHandling::None => "fn main() {\n",
-		ResultHandling::Discard => "fn main() { let _ = {\n",
-		ResultHandling::Print if pretty => "fn main() { println!(\"{:#?}\", {\n",
-		ResultHandling::Print => "fn main() { println!(\"{:?}\", {\n",
-	}
-	.to_owned();
-
-	if unsf {
-		after_crate_attrs = format!("{after_crate_attrs}unsafe {{");
-	}
-
-	// fn main boilerplate counterpart
-	let mut after_code = match result_handling {
-		ResultHandling::None => "}",
-		ResultHandling::Discard => "}; }",
-		ResultHandling::Print => "}); }",
-	}
-	.to_owned();
-
-	if unsf {
-		after_code = format!("}}{after_code}");
-	}
-
-	Cow::Owned(hoise_crate_attributes(
-		code,
-		&after_crate_attrs,
-		&after_code,
+	Cow::Owned(format!(
+		"\
+		{attrs}\n\
+		fn main() {body}"
 	))
 }
 
@@ -299,7 +304,9 @@ pub async fn send_reply(
 	// Discord displays empty code blocks weirdly if they're not formatted in a specific style,
 	// so we special-case empty code blocks
 	if result.trim().is_empty() {
-		ctx.say(format!("{flag_parse_errors}``` ```")).await?;
+		ctx.say(format!("{flag_parse_errors}``` ```"))
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 		return Ok(());
 	}
 
@@ -339,23 +346,29 @@ pub async fn send_reply(
 		})
 		.await?;
 
-	if let Some(retry_pressed) = response
-		.message()
-		.await?
-		.await_component_interaction(ctx)
-		.filter(move |mci: &ComponentInteraction| mci.data.custom_id == custom_id)
-		.timeout(std::time::Duration::from_mins(10))
-		.await
-	{
-		retry_pressed.defer(&ctx).await?;
-		ctx.rerun().await?;
-	} else {
-		// If timed out, just remove the button
-		// Errors are ignored in case the reply was deleted
-		let _ = response
-			// TODO: Add code to remove button
-			.edit(ctx, poise::CreateReply::default())
-			.await;
+	// Only timeout replies have a Retry button; waiting otherwise keeps command spans open.
+	if timeout {
+		if let Some(retry_pressed) = response
+			.message()
+			.await?
+			.await_component_interaction(ctx)
+			.filter(move |mci: &ComponentInteraction| mci.data.custom_id == custom_id)
+			.timeout(std::time::Duration::from_mins(10))
+			.await
+		{
+			retry_pressed
+				.defer(&ctx)
+				.instrument(crate::helpers::discord_operation_span("component.defer"))
+				.await?;
+			ctx.rerun().await?;
+		} else {
+			// If timed out, just remove the button
+			// Errors are ignored in case the reply was deleted
+			let _ = response
+				.edit(ctx, poise::CreateReply::default())
+				.instrument(crate::helpers::discord_operation_span("response.edit"))
+				.await;
+		}
 	}
 
 	Ok(())

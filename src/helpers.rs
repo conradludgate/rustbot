@@ -1,7 +1,7 @@
 use anyhow::{Context as AnyhowContext, Error, bail};
 use poise::serenity_prelude::{self as serenity, Mentionable};
 use sqlx::{Pool, Sqlite};
-use tracing::warn;
+use tracing::{Instrument, info_span, warn};
 
 use crate::types::{Context, Data};
 
@@ -20,7 +20,12 @@ macro_rules! require_database {
 		match $crate::helpers::database_pool(&$ctx) {
 			Some(db) => db,
 			None => {
-				$ctx.say($crate::helpers::DATABASE_DISABLED_MSG).await?;
+				{
+					use tracing::Instrument as _;
+					$ctx.say($crate::helpers::DATABASE_DISABLED_MSG)
+						.instrument($crate::helpers::discord_operation_span("say"))
+				}
+				.await?;
 				return Ok(());
 			}
 		}
@@ -29,6 +34,11 @@ macro_rules! require_database {
 
 // Re-export for easier access
 pub use require_database;
+
+/// Create a span for a Discord operation without recording its payload or request tokens.
+pub fn discord_operation_span(method: &'static str) -> tracing::Span {
+	info_span!("discord.operation", method)
+}
 
 /// Used for playground stdout + stderr, or godbolt asm + stderr
 /// If the return value is empty, returns " " instead, because Discord displays those better in
@@ -51,7 +61,11 @@ pub async fn acknowledge_fail(error: poise::FrameworkError<'_, Data, Error>) {
 
 		match ctx {
 			Context::Application(_) => {
-				if let Err(e) = ctx.say(format!("❌ {error}")).await {
+				if let Err(e) = ctx
+					.say(format!("❌ {error}"))
+					.instrument(crate::helpers::discord_operation_span("say"))
+					.await
+				{
 					warn!(
 						"Failed to send failure acknowledgment slash command response: {}",
 						e
@@ -115,7 +129,11 @@ pub async fn acknowledge_success(
 				Some(e) => e.to_string(),
 				None => fallback.to_string(),
 			};
-			if let Ok(reply) = ctx.say(msg_content).await {
+			if let Ok(reply) = ctx
+				.say(msg_content)
+				.instrument(crate::helpers::discord_operation_span("say"))
+				.await
+			{
 				tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 				let msg = reply.message().await?;
 				// ignore errors as to not fail if ephemeral
@@ -174,6 +192,7 @@ pub async fn reply_potentially_long_text(
 	truncation_msg_future: impl std::future::Future<Output = String>,
 ) -> Result<(), Error> {
 	ctx.say(trim_text(text_body, text_end, truncation_msg_future).await)
+		.instrument(crate::helpers::discord_operation_span("say"))
 		.await?;
 	Ok(())
 }
@@ -231,7 +250,9 @@ pub async fn paginate(ctx: Context<'_>, pages: &[String]) -> Result<(), Error> {
 			.components(vec![components])
 	};
 
-	ctx.send(reply).await?;
+	ctx.send(reply)
+		.instrument(crate::helpers::discord_operation_span("send"))
+		.await?;
 
 	// Loop through incoming interactions with the navigation buttons
 	let mut current_page = 0;
@@ -265,6 +286,9 @@ pub async fn paginate(ctx: Context<'_>, pages: &[String]) -> Result<(), Error> {
 						.embed(serenity::CreateEmbed::new().description(&pages[current_page])),
 				),
 			)
+			.instrument(crate::helpers::discord_operation_span(
+				"component.create_response",
+			))
 			.await?;
 	}
 

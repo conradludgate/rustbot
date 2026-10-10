@@ -12,6 +12,7 @@ use std::iter;
 use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::sync::Mutex;
+use tracing::Instrument as _;
 use tracing::{info, warn};
 
 use crate::types::Context;
@@ -54,9 +55,13 @@ const GIT_SHA: &str = match option_env!("FERRISBOT_GIT_SHA") {
 )]
 pub async fn go(ctx: Context<'_>) -> Result<(), Error> {
 	if rand::rng().random_bool(0.01) {
-		ctx.say("Yes").await?;
+		ctx.say("Yes")
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 	} else {
-		ctx.say("No").await?;
+		ctx.say("No")
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 	}
 	Ok(())
 }
@@ -81,6 +86,7 @@ pub async fn go(ctx: Context<'_>) -> Result<(), Error> {
 )]
 pub async fn source(ctx: Context<'_>) -> Result<(), Error> {
 	ctx.say("https://github.com/rust-community-discord/ferrisbot-for-discord")
+		.instrument(crate::helpers::discord_operation_span("say"))
 		.await?;
 	Ok(())
 }
@@ -173,6 +179,7 @@ pub async fn uptime(ctx: Context<'_>) -> Result<(), Error> {
 	ctx.say(format!(
 		"Uptime: {days}d {hours}h {minutes}m {seconds}s\nBuild: tag {GIT_TAG}, commit {GIT_SHA}"
 	))
+	.instrument(crate::helpers::discord_operation_span("say"))
 	.await?;
 
 	Ok(())
@@ -240,6 +247,7 @@ pub async fn conradluget(
 	let attachment = serenity::CreateAttachment::bytes(img_bytes, filename);
 
 	ctx.send(poise::CreateReply::default().attachment(attachment))
+		.instrument(crate::helpers::discord_operation_span("send"))
 		.await?;
 
 	Ok(())
@@ -329,6 +337,7 @@ pub async fn ban(
 		banned_user.user.name,
 		crate::helpers::custom_emoji_code(ctx, "ferrisBanne", '🔨')
 	))
+	.instrument(crate::helpers::discord_operation_span("say"))
 	.await?;
 	Ok(())
 }
@@ -387,6 +396,7 @@ pub async fn selftimeout(
 		ctx.author().name,
 		then.unix_timestamp()
 	))
+	.instrument(crate::helpers::discord_operation_span("say"))
 	.await?;
 
 	Ok(())
@@ -474,6 +484,7 @@ pub async fn edit(
 			.content("✅ Please send the new content for the message. I'll wait for 60 seconds.")
 			.ephemeral(true),
 	)
+	.instrument(crate::helpers::discord_operation_span("send"))
 	.await?;
 
 	// Wait for the next message from the same user in the same channel
@@ -494,6 +505,7 @@ pub async fn edit(
 						.content("❌ Empty message received. Edit cancelled.")
 						.ephemeral(true),
 				)
+				.instrument(crate::helpers::discord_operation_span("send"))
 				.await?;
 				return Ok(());
 			}
@@ -505,6 +517,7 @@ pub async fn edit(
 						)
 						.ephemeral(true),
 				)
+				.instrument(crate::helpers::discord_operation_span("send"))
 				.await?;
 				return Ok(());
 			}
@@ -520,6 +533,7 @@ pub async fn edit(
 				.content(format!("❌ Failed to log audit information: {e}"))
 				.ephemeral(true),
 		)
+		.instrument(crate::helpers::discord_operation_span("send"))
 		.await?;
 		return Ok(());
 	}
@@ -533,6 +547,7 @@ pub async fn edit(
 			.content("✅ Message edited successfully!")
 			.ephemeral(true),
 	)
+	.instrument(crate::helpers::discord_operation_span("send"))
 	.await?;
 
 	Ok(())
@@ -596,7 +611,9 @@ pub async fn server(ctx: Context<'_>) -> Result<(), Error> {
 
 		..Default::default()
 	};
-	ctx.send(reply).await?;
+	ctx.send(reply)
+		.instrument(crate::helpers::discord_operation_span("send"))
+		.await?;
 
 	Ok(())
 }
@@ -655,7 +672,9 @@ pub async fn user(
 
 		..Default::default()
 	};
-	ctx.send(reply).await?;
+	ctx.send(reply)
+		.instrument(crate::helpers::discord_operation_span("send"))
+		.await?;
 	Ok(())
 }
 

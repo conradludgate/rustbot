@@ -1,4 +1,5 @@
 use crate::types::Context;
+use tracing::Instrument as _;
 
 /// Returns the member's roles if available, handling both application and prefix contexts.
 fn get_member_roles(ctx: Context<'_>) -> Option<&[poise::serenity_prelude::RoleId]> {
@@ -26,6 +27,7 @@ pub async fn check_is_moderator(ctx: Context<'_>) -> anyhow::Result<bool> {
 				.content("This command is only available to moderators.")
 				.ephemeral(true),
 		)
+		.instrument(crate::helpers::discord_operation_span("send"))
 		.await?;
 	}
 

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use tracing::Instrument as _;
 
 use anyhow::Error;
 use tracing::warn;
@@ -11,9 +12,8 @@ use super::{
 		apply_online_rustfmt,
 	},
 	util::{
-		GenericHelp, ResultHandling, extract_relevant_lines, generic_help, maybe_wrap,
-		maybe_wrapped, parse_flags, send_reply, strip_fn_main_boilerplate_from_formatted,
-		stub_message,
+		GenericHelp, ResultHandling, extract_relevant_lines, generic_help, maybe_wrapped,
+		parse_flags, send_reply, strip_fn_main_boilerplate_from_formatted, stub_message,
 	},
 };
 
@@ -40,12 +40,13 @@ pub async fn miri(
 	flags: poise::KeyValueArgs,
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 	let code = &maybe_wrapped(
 		&code.code,
 		ResultHandling::Discard,
 		ctx.prefix().contains("Sweat"),
-		false,
 	);
 	let (flags, flag_parse_errors) = parse_flags(flags);
 
@@ -112,9 +113,11 @@ pub async fn expand(
 	flags: poise::KeyValueArgs,
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
-	let code = maybe_wrap(&code.code, ResultHandling::None);
+	let code = maybe_wrapped(&code.code, ResultHandling::None, false);
 	let was_fn_main_wrapped = matches!(code, Cow::Owned(_));
 	let (flags, flag_parse_errors) = parse_flags(flags);
 
@@ -199,17 +202,18 @@ pub async fn clippy(
 	flags: poise::KeyValueArgs,
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
 	let code = &format!(
 		// dead_code: https://github.com/kangalioo/rustbot/issues/44
 		// let_unit_value: silence warning about `let _ = { ... }` wrapper that swallows return val
-		"#![allow(dead_code, clippy::let_unit_value)] {}",
+		"#![allow(dead_code, clippy::let_unit_value)]\n{}",
 		maybe_wrapped(
 			&code.code,
 			ResultHandling::Discard,
 			ctx.prefix().contains("Sweat"),
-			false,
 		)
 	);
 	let (flags, flag_parse_errors) = parse_flags(flags);
@@ -279,9 +283,11 @@ pub async fn fmt(
 	flags: poise::KeyValueArgs,
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
-	let code = &maybe_wrap(&code.code, ResultHandling::None);
+	let code = &maybe_wrapped(&code.code, ResultHandling::None, false);
 	let was_fn_main_wrapped = matches!(code, Cow::Owned(_));
 	let (flags, flag_parse_errors) = parse_flags(flags);
 

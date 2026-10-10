@@ -1,4 +1,5 @@
 use std::{collections::HashMap, mem::take};
+use tracing::Instrument as _;
 
 use anyhow::{Error, anyhow};
 use poise::{CodeBlockError, KeyValueArgs};
@@ -231,6 +232,7 @@ async fn respond_codeblocks(
 				)
 				.await,
 			)
+			.instrument(crate::helpers::discord_operation_span("say"))
 			.await?;
 		}
 	}
@@ -257,6 +259,7 @@ async fn respond_codeblock(
 		)
 		.await,
 	)
+	.instrument(crate::helpers::discord_operation_span("say"))
 	.await?;
 	Ok(())
 }

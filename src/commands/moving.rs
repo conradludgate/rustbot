@@ -4,6 +4,7 @@ use std::{
 	sync::Mutex,
 	time::Duration,
 };
+use tracing::Instrument as _;
 
 use anyhow::{Result, anyhow};
 use futures::StreamExt as _;
@@ -435,7 +436,10 @@ impl MoveOptionsDialog {
 		};
 
 		if component.can_defer() {
-			interaction.defer(&ctx).await?;
+			interaction
+				.defer(&ctx)
+				.instrument(crate::helpers::discord_operation_span("component.defer"))
+				.await?;
 		}
 
 		match component {
@@ -461,6 +465,9 @@ impl MoveOptionsDialog {
 							&ctx,
 							EditInteractionResponse::new().components(components.collect()),
 						)
+						.instrument(crate::helpers::discord_operation_span(
+							"component.edit_response",
+						))
 						.await?;
 				}
 			}
@@ -740,7 +747,9 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 	let messages = get_messages_after_and_including_msg(&ctx, &start_msg).await?;
 
 	if messages.is_empty() {
-		ctx.say("No messages found").await?;
+		ctx.say("No messages found")
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 		return Ok(());
 	}
 
@@ -896,7 +905,11 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 			builder = builder.in_thread(thread);
 		}
 
-		match webhook.execute(&ctx, true, builder).await {
+		match webhook
+			.execute(&ctx, true, builder)
+			.instrument(crate::helpers::discord_operation_span("webhook.execute"))
+			.await
+		{
 			Ok(Some(msg)) => {
 				original_users.insert(msg.id, message.author.id);
 				relayed_messages.push(msg);
@@ -1011,6 +1024,7 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 		Mention::from(ctx.author().id),
 		Mention::from(destination.id())
 	))
+	.instrument(crate::helpers::discord_operation_span("say"))
 	.await?;
 
 	Ok(())
@@ -1141,7 +1155,11 @@ async fn prompt_user_for_edit_to_relayed_message(
 	let mut prompt_string = prompt_string.build();
 	prompt_string.truncate(2048);
 
-	let prompt = match dm.say(&ctx, prompt_string).await {
+	let prompt = match dm
+		.say(&ctx, prompt_string)
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await
+	{
 		Ok(msg) => msg,
 		Err(e) => {
 			tracing::warn!(err = %e, "failed to DM user");

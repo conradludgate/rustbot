@@ -1,5 +1,6 @@
 use anyhow::Result;
 use poise::serenity_prelude as serenity;
+use tracing::Instrument as _;
 
 use crate::types::Context;
 
@@ -63,6 +64,8 @@ pub async fn thread_pin(ctx: Context<'_>, message: serenity::Message) -> Result<
 	};
 
 	let reply = poise::CreateReply::default().content(reply).ephemeral(true);
-	ctx.send(reply).await?;
+	ctx.send(reply)
+		.instrument(crate::helpers::discord_operation_span("send"))
+		.await?;
 	Ok(())
 }
