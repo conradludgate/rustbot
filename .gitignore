@@ -30,6 +30,9 @@ logs-bkp/
 *.sqlite3
 *.db
 
+# Pending insta snapshots are reviewed locally, then accepted as .snap files.
+*.snap.new
+
 # Database and config files
 ferris.secrets.toml
 ferris.toml

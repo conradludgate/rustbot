@@ -10,6 +10,7 @@ use opentelemetry_sdk::{
 	Resource,
 	trace::{Sampler, SdkTracerProvider},
 };
+use poise::serenity_prelude::GatewayIntents;
 use serde::Deserialize;
 use serde_json::json;
 use snafu::{Report, ResultExt as _, Snafu};
@@ -46,10 +47,41 @@ struct TelemetryConfig {
 	sample_rate: f64,
 }
 
+#[derive(Deserialize, Default, Debug)]
+struct GatewayConfig {
+	#[serde(default)]
+	privileged_intents: Vec<PrivilegedGatewayIntent>,
+}
+
+#[derive(Deserialize, Clone, Copy, Debug)]
+#[serde(rename_all = "snake_case")]
+enum PrivilegedGatewayIntent {
+	GuildMembers,
+	GuildPresences,
+	MessageContent,
+}
+
+impl GatewayConfig {
+	fn intents(&self) -> GatewayIntents {
+		self.privileged_intents
+			.iter()
+			.fold(GatewayIntents::non_privileged(), |intents, intent| {
+				intents
+					| match intent {
+						PrivilegedGatewayIntent::GuildMembers => GatewayIntents::GUILD_MEMBERS,
+						PrivilegedGatewayIntent::GuildPresences => GatewayIntents::GUILD_PRESENCES,
+						PrivilegedGatewayIntent::MessageContent => GatewayIntents::MESSAGE_CONTENT,
+					}
+			})
+	}
+}
+
 #[derive(Deserialize, Debug)]
 struct Config {
 	log: LogConfig,
 	database: DatabaseConfig,
+	#[serde(default)]
+	gateway: GatewayConfig,
 	#[serde(default)]
 	telemetry: Option<TelemetryConfig>,
 	secrets: HashMap<String, String>,
@@ -69,6 +101,9 @@ static DEFAULT_CONFIG: LazyLock<serde_json::Value> = LazyLock::new(|| {
 		"database": {
 			"disabled": false,
 			"url": "sqlite://database/ferris.sqlite3"
+		},
+		"gateway": {
+			"privileged_intents": []
 		},
 		"secrets": {}
 	})
@@ -123,9 +158,14 @@ fn app(config: &Config) -> Result<(), AppError> {
 				.collect(),
 		);
 
-		let mut client = ferrisbot_for_discord::serenity(secret_store, pool)
-			.await
-			.context(SerenityInitSnafu)?;
+		info!(
+			privileged_intents = ?config.gateway.privileged_intents,
+			"configured privileged Discord gateway intents"
+		);
+		let mut client =
+			ferrisbot_for_discord::serenity(secret_store, pool, config.gateway.intents())
+				.await
+				.context(SerenityInitSnafu)?;
 
 		info!("starting serenity...");
 
@@ -330,7 +370,28 @@ fn check_for_config_files(main: &PathBuf, secrets: &PathBuf) {
 
 #[cfg(test)]
 mod tests {
-	use super::{TelemetryConfig, build_tracer_provider};
+	use super::{GatewayConfig, PrivilegedGatewayIntent, TelemetryConfig, build_tracer_provider};
+	use poise::serenity_prelude::GatewayIntents;
+
+	#[test]
+	fn gateway_intents_default_to_non_privileged() {
+		assert_eq!(
+			GatewayConfig::default().intents(),
+			GatewayIntents::non_privileged()
+		);
+	}
+
+	#[test]
+	fn gateway_intents_include_only_configured_privileged_intents() {
+		let config = GatewayConfig {
+			privileged_intents: vec![PrivilegedGatewayIntent::MessageContent],
+		};
+
+		assert_eq!(
+			config.intents(),
+			GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT
+		);
+	}
 
 	#[test]
 	fn builds_http_otlp_tracer_provider() {

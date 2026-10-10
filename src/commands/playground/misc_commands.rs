@@ -50,7 +50,7 @@ pub async fn miri(
 	let mut result: PlayResult = ctx
 		.data()
 		.http
-		.post("https://play.rust-lang.org/miri")
+		.post(ctx.data().external_apis.playground_url("miri"))
 		.json(&MiriRequest {
 			code,
 			edition: flags.edition,
@@ -119,7 +119,7 @@ pub async fn expand(
 	let mut result: PlayResult = ctx
 		.data()
 		.http
-		.post("https://play.rust-lang.org/macro-expansion")
+		.post(ctx.data().external_apis.playground_url("macro-expansion"))
 		.json(&MacroExpansionRequest {
 			code: &code,
 			edition: flags.edition,
@@ -214,7 +214,7 @@ pub async fn clippy(
 	let mut result: PlayResult = ctx
 		.data()
 		.http
-		.post("https://play.rust-lang.org/clippy")
+		.post(ctx.data().external_apis.playground_url("clippy"))
 		.json(&ClippyRequest {
 			code,
 			edition: flags.edition,

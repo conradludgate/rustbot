@@ -29,6 +29,8 @@ The application loads configuration from two TOML files plus environment variabl
 - `config/ferris.toml` (optional): general settings.
 - `config/ferris.secrets.toml` (required): copy from `config/ferris.secrets.template.toml` and fill in the required secrets.
 
+`[gateway].privileged_intents` optionally enables `guild_members`, `guild_presences`, or `message_content`. All non-privileged intents are enabled automatically. Only enable privileged intents that are also enabled for the application in the Discord Developer Portal.
+
 ## Database setup (sqlx)
 
 We use sqlx with SQLite. Point `DATABASE_URL` at the database file you want to use (default: `sqlite://database/ferris.sqlite3`). Run the following after changing schemas or when setting up a fresh checkout:
@@ -56,6 +58,11 @@ The repository ships with a `Containerfile` and `compose.yaml` for containerized
 To run migrations inside the container instead of locally, you can use `docker compose run --rm ferris cargo sqlx database migrate` (or `... database setup` / `... prepare`).
 
 If you need to access the container directly, you can use `docker compose run --rm --entrypoint /bin/sh ferris`.
+
+## Local development and tests
+
+- [Local Discord and tracing stack](local-test/README.md): run the bot with Fauxcord and Jaeger.
+- [Command integration tests](tests/README.md): run Rust tests, review snapshots, and refresh API fixtures.
 
 ## Credits
 

@@ -1,0 +1,18 @@
+{
+  "captured_at_utc": "2026-10-10T16:03:24.690834+00:00",
+  "source": {
+    "playground": "https://play.rust-lang.org",
+    "godbolt": "https://godbolt.org"
+  },
+  "godbolt_nightly_compiler_id": "nightly",
+  "http_statuses": {
+    "playground_execute_success": 200,
+    "playground_execute_compile_error": 200,
+    "playground_execute_microbench_success": 200,
+    "godbolt_compilers_rust": 200,
+    "godbolt_libraries_rust": 200,
+    "godbolt_compile_success": 200,
+    "godbolt_compile_error": 200
+  },
+  "notes": "Bodies are direct upstream JSON responses; CI replays these files offline."
+}

@@ -68,6 +68,7 @@ struct GodboltRequest<'a> {
 	rustc: &'a str,
 	flags: &'a str,
 	run_llvm_mca: bool,
+	api_base_url: String,
 }
 
 /// Compile a given Rust source code file on Godbolt using the latest nightly compiler with
@@ -81,7 +82,8 @@ async fn compile_rust_source(
 
 	let http_request = http
 		.post(format!(
-			"https://godbolt.org/api/compiler/{}/compile",
+			"{}/api/compiler/{}/compile",
+			request.api_base_url.trim_end_matches('/'),
 			request.rustc
 		))
 		.header(reqwest::header::ACCEPT, "application/json") // to make godbolt respond in JSON
@@ -126,7 +128,10 @@ async fn save_to_shortlink(http: &ClientWithMiddleware, req: &GodboltRequest<'_>
 	let tools = make_tools_json(req.run_llvm_mca);
 
 	let request = http
-		.post("https://godbolt.org/api/shortener")
+		.post(format!(
+			"{}/api/shortener",
+			req.api_base_url.trim_end_matches('/'),
+		))
 		.json(&serde_json::json! { {
 			"sessions": [{
 				"language": "rust",
@@ -360,6 +365,7 @@ pub async fn godbolt(ctx: Context<'_>, #[rest] arguments: String) -> Result<(), 
 		rustc: &rustc,
 		flags: &flags,
 		run_llvm_mca: false,
+		api_base_url: ctx.data().external_apis.godbolt_url(""),
 	};
 	let godbolt_result = compile_rust_source(&ctx.data().http, &godbolt_request).await?;
 
@@ -406,6 +412,7 @@ pub async fn mca(ctx: Context<'_>, #[rest] arguments: String) -> Result<(), Erro
 		rustc: &rustc,
 		flags: &flags,
 		run_llvm_mca: true,
+		api_base_url: ctx.data().external_apis.godbolt_url(""),
 	};
 
 	let godbolt_result = compile_rust_source(&ctx.data().http, &godbolt_request).await?;
@@ -455,6 +462,7 @@ pub async fn llvmir(ctx: Context<'_>, #[rest] arguments: String) -> Result<(), E
 		rustc: &rustc,
 		flags: &(flags + " --emit=llvm-ir -Cdebuginfo=0"),
 		run_llvm_mca: false,
+		api_base_url: ctx.data().external_apis.godbolt_url(""),
 	};
 	let godbolt_result = compile_rust_source(&ctx.data().http, &godbolt_request).await?;
 

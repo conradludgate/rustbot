@@ -2,6 +2,12 @@
 disabled = false
 url = "sqlite://database/ferris.sqlite3"
 
+[gateway]
+# All non-privileged intents are enabled automatically. Only add these after
+# enabling them in the Discord Developer Portal:
+# "guild_members", "guild_presences", "message_content".
+privileged_intents = []
+
 [log]
 filter = "info,serenity=warn"
 rotation = "daily"

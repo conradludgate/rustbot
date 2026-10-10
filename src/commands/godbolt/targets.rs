@@ -85,7 +85,7 @@ async fn update_godbolt_metadata(data: &Data) -> Result<(), Error> {
 	if needs_update {
 		let request = data
 			.http
-			.get("https://godbolt.org/api/compilers/rust")
+			.get(data.external_apis.godbolt_url("api/compilers/rust"))
 			.header(reqwest::header::ACCEPT, "application/json");
 		let mut targets: Vec<GodboltTarget> = request.send().await?.json().await?;
 		// Clean up the data we've gotten from the request
@@ -98,7 +98,7 @@ async fn update_godbolt_metadata(data: &Data) -> Result<(), Error> {
 
 		let request = data
 			.http
-			.get("https://godbolt.org/api/libraries/rust")
+			.get(data.external_apis.godbolt_url("api/libraries/rust"))
 			.header(reqwest::header::ACCEPT, "application/json");
 		let libraries: Vec<GodboltLibrary> = request.send().await?.json().await?;
 

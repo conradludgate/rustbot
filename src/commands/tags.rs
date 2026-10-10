@@ -450,6 +450,12 @@ mod database {
 
 	/// Fetches a tag from the database, including aliases. Returns an error if the tag or alias is
 	/// not found.
+	#[tracing::instrument(
+		name = "db.tags.get",
+		skip_all,
+		fields(tag.name = %name),
+		err(Debug),
+	)]
 	pub async fn tag_get(pool: &Pool<Sqlite>, name: &str) -> Result<Tag, Error> {
 		let query = sqlx::query_as!(
 			Tag,
@@ -476,6 +482,12 @@ mod database {
 	}
 
 	/// Increases the use count of a tag by 1.
+	#[tracing::instrument(
+		name = "db.tags.increase_use_count",
+		skip_all,
+		fields(tag.name = %name),
+		err(Debug),
+	)]
 	pub async fn tag_increase_use_count(pool: &Pool<Sqlite>, name: &str) -> Result<(), Error> {
 		sqlx::query!(
 			"
@@ -493,6 +505,12 @@ mod database {
 	}
 
 	/// Creates a new tag in the database.
+	#[tracing::instrument(
+		name = "db.tags.create",
+		skip_all,
+		fields(tag.name = %name),
+		err(Debug),
+	)]
 	pub async fn tag_create(
 		pool: &Pool<Sqlite>,
 		name: &str,
@@ -520,6 +538,12 @@ mod database {
 	/// Deletes a tag from the `tag_aliases` table, and if that doesn't delete anything, then it deletes
 	/// on the tags table. If that doesn't delete anything then the tag didn't exist, and it returns
 	/// an error.
+	#[tracing::instrument(
+		name = "db.tags.delete",
+		skip_all,
+		fields(tag.name = %name),
+		err(Debug),
+	)]
 	pub async fn tag_delete(pool: &Pool<Sqlite>, name: &str) -> Result<(), Error> {
 		let deleted_aliases = sqlx::query!("DELETE FROM tag_aliases WHERE alias = ?1", name)
 			.execute(pool)
@@ -545,6 +569,12 @@ mod database {
 	}
 
 	/// Creates an alias for a tag.
+	#[tracing::instrument(
+		name = "db.tags.create_alias",
+		skip_all,
+		fields(tag.name = %tag_name),
+		err(Debug),
+	)]
 	pub async fn tag_create_alias(
 		pool: &Pool<Sqlite>,
 		tag_name: &str,
@@ -566,6 +596,12 @@ mod database {
 	}
 
 	/// Edits the content of a tag or alias. If the tag doesn't exist, it returns an error.
+	#[tracing::instrument(
+		name = "db.tags.edit",
+		skip_all,
+		fields(tag.name = %name),
+		err(Debug),
+	)]
 	pub async fn tag_edit(
 		pool: &Pool<Sqlite>,
 		name: &str,
@@ -594,6 +630,12 @@ mod database {
 	}
 
 	/// Restricts a tag by tag name or alias.
+	#[tracing::instrument(
+		name = "db.tags.restrict",
+		skip_all,
+		fields(tag.name = %name),
+		err(Debug),
+	)]
 	pub async fn tag_restrict(pool: &Pool<Sqlite>, name: &str) -> Result<(), Error> {
 		sqlx::query!(
 			"
@@ -616,6 +658,7 @@ mod database {
 	}
 
 	/// Gets general stats about the tags in the server.
+	#[tracing::instrument(name = "db.tags.server_stats", skip_all, err(Debug))]
 	pub async fn tag_get_server_stats(pool: &Pool<Sqlite>) -> Result<TagStatsServer, Error> {
 		let total_tag_uses_row = sqlx::query!("SELECT SUM(times_used) as total FROM tags")
 			.fetch_one(pool)
@@ -668,6 +711,12 @@ mod database {
 		})
 	}
 
+	#[tracing::instrument(
+		name = "db.tags.member_stats",
+		skip_all,
+		fields(user.id = member),
+		err(Debug),
+	)]
 	pub async fn tag_get_member_stats(
 		pool: &Pool<Sqlite>,
 		member: u64,
@@ -709,6 +758,12 @@ mod database {
 	}
 
 	/// Returns the times the tag has been used and the total amount of tags.
+	#[tracing::instrument(
+		name = "db.tags.rank",
+		skip_all,
+		fields(tag.name = %name),
+		err(Debug),
+	)]
 	pub async fn tag_get_rank(pool: &Pool<Sqlite>, name: &str) -> Result<(i64, i64), Error> {
 		let times_used_row = sqlx::query!("SELECT times_used FROM tags WHERE name = ?1", name)
 			.fetch_one(pool)
@@ -726,6 +781,12 @@ mod database {
 	}
 
 	/// Lists all tags owned by a user.
+	#[tracing::instrument(
+		name = "db.tags.list_member",
+		skip_all,
+		fields(user.id = user_id),
+		err(Debug),
+	)]
 	pub async fn tag_get_by_member(pool: &Pool<Sqlite>, user_id: u64) -> Result<Vec<Tag>, Error> {
 		let user_id = u64_to_i64(user_id);
 
@@ -742,6 +803,7 @@ mod database {
 	}
 
 	/// Lists all tags.
+	#[tracing::instrument(name = "db.tags.list", skip_all, err(Debug))]
 	pub async fn tag_list(pool: &Pool<Sqlite>) -> Result<Vec<Tag>, Error> {
 		let tags = sqlx::query_as!(
 			Tag,

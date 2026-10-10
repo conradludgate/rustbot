@@ -8,6 +8,7 @@ pub mod man;
 pub mod modmail;
 pub mod moving;
 pub mod playground;
+pub mod server_icon;
 pub mod tags;
 pub mod thread_pin;
 pub mod utilities;

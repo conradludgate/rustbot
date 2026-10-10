@@ -1,0 +1,5 @@
+---
+source: tests/fauxcord_snapshots.rs
+expression: response.reply
+---
+No public functions (`pub fn`) found for benchmarking :thinking:

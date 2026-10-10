@@ -1,0 +1,9 @@
+---
+source: tests/fauxcord_snapshots.rs
+expression: response.reply
+---
+Hint: use the black_box function to prevent computations from being optimized out
+```rust
+first: 0.0ns ± 0.0
+second: 0.0ns ± 0.0
+```
