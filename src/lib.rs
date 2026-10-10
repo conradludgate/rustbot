@@ -269,6 +269,7 @@ fn build_command_list(enable_database: bool) -> Vec<poise::Command<Data, Error>>
 		commands::utilities::selftimeout(),
 		commands::utilities::solved(),
 		commands::utilities::edit(),
+		commands::utilities::run_prefix_command(),
 		commands::thread_pin::thread_pin(),
 		commands::modmail::modmail(),
 		commands::modmail::modmail_context_menu_for_message(),
