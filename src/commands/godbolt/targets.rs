@@ -1,4 +1,5 @@
 use std::iter::once;
+use tracing::Instrument as _;
 
 use anyhow::{Error, anyhow};
 use poise::serenity_prelude as serenity;
@@ -246,6 +247,7 @@ pub async fn targets(ctx: Context<'_>) -> Result<(), Error> {
 				})),
 		),
 	)
+	.instrument(crate::helpers::discord_operation_span("send"))
 	.await?;
 
 	Ok(())

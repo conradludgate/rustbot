@@ -4,6 +4,7 @@ use poise::serenity_prelude::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter}
 use poise::{CreateReply, serenity_prelude as serenity};
 use serde::Serialize;
 use sqlx::{FromRow, Pool, Sqlite};
+use tracing::Instrument as _;
 
 /*
 SQLite schema for tags:
@@ -72,7 +73,9 @@ pub async fn tag(ctx: Context<'_>, name: String) -> Result<(), Error> {
 	let db = require_database!(ctx);
 	let tag = database::tag_get(db, &name).await?;
 
-	ctx.say(tag.content).await?;
+	ctx.say(tag.content)
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
 	database::tag_increase_use_count(db, &name).await?;
 
@@ -136,14 +139,18 @@ pub async fn tags_create(ctx: Context<'_>, name: String, content: String) -> Res
 
 	let tag_already_exists = tag.is_ok();
 	if tag_already_exists {
-		ctx.say("Tag already exists").await?;
+		ctx.say("Tag already exists")
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 		return Ok(());
 	}
 
 	let user_id = ctx.author().id.get();
 	database::tag_create(db, &name, &content, user_id).await?;
 
-	ctx.say("Tag created").await?;
+	ctx.say("Tag created")
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 	Ok(())
 }
 
@@ -170,7 +177,9 @@ pub async fn tags_delete(ctx: Context<'_>, name: String) -> Result<(), Error> {
 	let db = require_database!(ctx);
 	database::tag_delete(db, &name).await?;
 
-	ctx.say("Tag deleted").await?;
+	ctx.say("Tag deleted")
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 	Ok(())
 }
 
@@ -191,14 +200,18 @@ pub async fn tags_alias(ctx: Context<'_>, existing: String, new: String) -> Resu
 	let db = require_database!(ctx);
 	let tag_already_exists = database::tag_get(db, &new).await.is_ok();
 	if tag_already_exists {
-		ctx.say("Tag already exists").await?;
+		ctx.say("Tag already exists")
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 		return Ok(());
 	}
 
 	let tag = database::tag_get(db, &existing).await?;
 	database::tag_create_alias(db, &tag.name, &new).await?;
 
-	ctx.say("Alias created").await?;
+	ctx.say("Alias created")
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 	Ok(())
 }
 
@@ -224,13 +237,17 @@ pub async fn tags_edit(ctx: Context<'_>, name: String, content: String) -> Resul
 		.await?;
 
 	if tag.restricted != 0 && !editor_is_staff {
-		ctx.say("Tag is restricted").await?;
+		ctx.say("Tag is restricted")
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 		return Ok(());
 	}
 
 	database::tag_edit(db, &name, &content, ctx.author().id.get()).await?;
 
-	ctx.say("Tag edited").await?;
+	ctx.say("Tag edited")
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 	Ok(())
 }
 
@@ -251,7 +268,9 @@ pub async fn tags_restrict(ctx: Context<'_>, name: String) -> Result<(), Error> 
 	let db = require_database!(ctx);
 	database::tag_restrict(db, &name).await?;
 
-	ctx.say("Tag restricted").await?;
+	ctx.say("Tag restricted")
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 	Ok(())
 }
 
@@ -276,7 +295,9 @@ pub async fn tags_stats(ctx: Context<'_>, member: Option<serenity::UserId>) -> R
 		tags_server_stats(&ctx, db).await?
 	};
 
-	ctx.send(CreateReply::default().embed(embed)).await?;
+	ctx.send(CreateReply::default().embed(embed))
+		.instrument(crate::helpers::discord_operation_span("send"))
+		.await?;
 
 	Ok(())
 }
@@ -403,7 +424,9 @@ pub async fn tags_info(ctx: Context<'_>, name: String) -> Result<(), Error> {
 		embed = embed.field("Last Edit Date", &last_edit_date, true);
 	}
 
-	ctx.send(CreateReply::default().embed(embed)).await?;
+	ctx.send(CreateReply::default().embed(embed))
+		.instrument(crate::helpers::discord_operation_span("send"))
+		.await?;
 
 	Ok(())
 }

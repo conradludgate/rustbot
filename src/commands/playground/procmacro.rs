@@ -1,4 +1,5 @@
 use anyhow::Error;
+use tracing::Instrument as _;
 
 use crate::types::Context;
 
@@ -34,7 +35,9 @@ pub async fn procmacro(
 	macro_code: poise::CodeBlock,
 	usage_code: poise::CodeBlock,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
 	let macro_code = macro_code.code;
 	let usage_code = maybe_wrapped(&usage_code.code, ResultHandling::None, false);

@@ -1,4 +1,5 @@
 use anyhow::Error;
+use tracing::Instrument as _;
 
 use crate::types::Context;
 
@@ -18,7 +19,9 @@ async fn play_or_eval(
 	code: poise::CodeBlock,
 	result_handling: ResultHandling,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
 	let result_handling = match result_handling {
 		ResultHandling::Print if ctx.prefix().contains("OwO") || ctx.prefix().contains("Cat") => {

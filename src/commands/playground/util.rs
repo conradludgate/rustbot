@@ -1,5 +1,6 @@
 use core::fmt::Write as _;
 use std::borrow::Cow;
+use tracing::Instrument as _;
 
 use poise::serenity_prelude as serenity;
 use serenity::ComponentInteraction;
@@ -303,7 +304,9 @@ pub async fn send_reply(
 	// Discord displays empty code blocks weirdly if they're not formatted in a specific style,
 	// so we special-case empty code blocks
 	if result.trim().is_empty() {
-		ctx.say(format!("{flag_parse_errors}``` ```")).await?;
+		ctx.say(format!("{flag_parse_errors}``` ```"))
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 		return Ok(());
 	}
 
@@ -353,13 +356,17 @@ pub async fn send_reply(
 			.timeout(std::time::Duration::from_mins(10))
 			.await
 		{
-			retry_pressed.defer(&ctx).await?;
+			retry_pressed
+				.defer(&ctx)
+				.instrument(crate::helpers::discord_operation_span("component.defer"))
+				.await?;
 			ctx.rerun().await?;
 		} else {
 			// If timed out, just remove the button
 			// Errors are ignored in case the reply was deleted
 			let _ = response
 				.edit(ctx, poise::CreateReply::default())
+				.instrument(crate::helpers::discord_operation_span("response.edit"))
 				.await;
 		}
 	}

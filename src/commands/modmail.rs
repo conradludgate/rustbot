@@ -2,6 +2,7 @@ use anyhow::{Context as AnyhowContext, Error, anyhow};
 use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::{EditThread, GuildChannel, Mentionable, UserId};
 use rand::Rng;
+use tracing::Instrument as _;
 use tracing::{debug, info};
 
 use crate::types::{Context, Data};
@@ -12,6 +13,7 @@ async fn send_modmail_success(ctx: Context<'_>, modmail: &GuildChannel) -> Resul
 		"Successfully sent your message to the moderators. Check out your modmail thread here: {}",
 		modmail.mention()
 	))
+	.instrument(crate::helpers::discord_operation_span("say"))
 	.await?;
 	Ok(())
 }

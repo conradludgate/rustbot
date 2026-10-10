@@ -1,6 +1,7 @@
 use anyhow::Result;
 use anyhow::bail;
 use reqwest::header;
+use tracing::Instrument as _;
 
 use crate::serenity;
 use crate::types::Context;
@@ -47,11 +48,15 @@ pub async fn man(
 		.await
 	{
 		if response.status() == 404 {
-			ctx.say("Man page not found.").await?;
+			ctx.say("Man page not found.")
+				.instrument(crate::helpers::discord_operation_span("say"))
+				.await?;
 			return Ok(());
 		}
 	} else {
-		ctx.say("Failed to fetch man page.").await?;
+		ctx.say("Failed to fetch man page.")
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 		return Ok(());
 	}
 
@@ -73,6 +78,7 @@ pub async fn man(
 				.timestamp(serenity::Timestamp::now()),
 		),
 	)
+	.instrument(crate::helpers::discord_operation_span("send"))
 	.await?;
 
 	Ok(())

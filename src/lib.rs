@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::Instrument as _;
 
 use anyhow::{Error, anyhow};
 use futures::StreamExt;
@@ -300,7 +301,11 @@ fn build_command_list(enable_database: bool) -> Vec<poise::Command<Data, Error>>
 /// if we can't send an error message.
 async fn try_say(ctx: &poise::Context<'_, Data, Error>, message: impl Into<String>) {
 	let msg = message.into();
-	if let Err(e) = ctx.say(&msg).await {
+	if let Err(e) = ctx
+		.say(&msg)
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await
+	{
 		warn!(
 			"Failed to send message '{}...': {}",
 			&msg[..msg.len().min(50)],

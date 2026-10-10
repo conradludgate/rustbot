@@ -5,6 +5,7 @@ use futures::stream::FuturesUnordered;
 use reqwest::header;
 use reqwest_middleware::ClientWithMiddleware;
 use serde::Deserialize;
+use tracing::Instrument as _;
 use tracing::info;
 
 use crate::serenity;
@@ -135,7 +136,9 @@ pub async fn crate_(
 	crate_name: String,
 ) -> Result<()> {
 	if let Some(url) = rustc_crate_link(&crate_name) {
-		ctx.say(url).await?;
+		ctx.say(url)
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 		return Ok(());
 	}
 
@@ -170,6 +173,7 @@ pub async fn crate_(
 				.color(crate::types::EMBED_COLOR),
 		),
 	)
+	.instrument(crate::helpers::discord_operation_span("send"))
 	.await?;
 
 	Ok(())
@@ -253,6 +257,7 @@ pub async fn doc(
 	#[description = "Path of the crate and item to lookup"] query: String,
 ) -> Result<()> {
 	ctx.say(path_to_doc_url(&query, &ctx.data().http).await?)
+		.instrument(crate::helpers::discord_operation_span("say"))
 		.await?;
 
 	Ok(())

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use tracing::Instrument as _;
 
 use anyhow::Error;
 use tracing::warn;
@@ -39,7 +40,9 @@ pub async fn miri(
 	flags: poise::KeyValueArgs,
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 	let code = &maybe_wrapped(
 		&code.code,
 		ResultHandling::Discard,
@@ -110,7 +113,9 @@ pub async fn expand(
 	flags: poise::KeyValueArgs,
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
 	let code = maybe_wrapped(&code.code, ResultHandling::None, false);
 	let was_fn_main_wrapped = matches!(code, Cow::Owned(_));
@@ -197,7 +202,9 @@ pub async fn clippy(
 	flags: poise::KeyValueArgs,
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
 	let code = &format!(
 		// dead_code: https://github.com/kangalioo/rustbot/issues/44
@@ -276,7 +283,9 @@ pub async fn fmt(
 	flags: poise::KeyValueArgs,
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
-	ctx.say(stub_message(ctx)).await?;
+	ctx.say(stub_message(ctx))
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
 	let code = &maybe_wrapped(&code.code, ResultHandling::None, false);
 	let was_fn_main_wrapped = matches!(code, Cow::Owned(_));

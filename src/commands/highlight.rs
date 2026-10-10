@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use tracing::Instrument as _;
 
 use crate::{require_database, types::Context};
 use anyhow::{Error, Result};
@@ -48,14 +49,18 @@ pub async fn add(c: Context<'_>, regex: String) -> Result<()> {
 	let db = require_database!(c);
 
 	if let Err(e) = RegexBuilder::new(&regex).size_limit(1 << 10).build() {
-		c.say(format!("```\n{e}```")).await?;
+		c.say(format!("```\n{e}```"))
+			.instrument(crate::helpers::discord_operation_span("say"))
+			.await?;
 		return Ok(());
 	}
 
 	database::highlight_add(db, c.author().id, &regex).await?;
 
 	RegexHolder::update(c.data()).await;
-	c.say("hl added!").await?;
+	c.say("hl added!")
+		.instrument(crate::helpers::discord_operation_span("say"))
+		.await?;
 
 	Ok(())
 }
@@ -85,6 +90,7 @@ pub async fn remove(c: Context<'_>, id: i64) -> Result<()> {
 			"hl not found."
 		}
 	})
+	.instrument(crate::helpers::discord_operation_span("say"))
 	.await?;
 
 	RegexHolder::update(c.data()).await;
@@ -122,6 +128,7 @@ pub async fn list(c: Context<'_>) -> Result<()> {
 				.description(description),
 		),
 	)
+	.instrument(crate::helpers::discord_operation_span("send_reply"))
 	.await?;
 	Ok(())
 }
@@ -165,6 +172,7 @@ pub async fn mat(c: Context<'_>, haystack: String) -> Result<()> {
 				.description(itertools::intersperse(x, "\n".to_string()).collect::<String>()),
 		),
 	)
+	.instrument(crate::helpers::discord_operation_span("send_reply"))
 	.await?;
 
 	Ok(())
