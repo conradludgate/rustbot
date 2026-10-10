@@ -5,7 +5,7 @@ use crate::types::Context;
 use super::{
 	api::{Channel, CrateType, Edition, Mode, PlayResult, PlaygroundRequest},
 	util::{
-		GenericHelp, ResultHandling, format_play_eval_stderr, generic_help, maybe_wrap,
+		GenericHelp, ResultHandling, format_play_eval_stderr, generic_help, maybe_wrapped,
 		parse_flags, send_reply, stub_message,
 	},
 };
@@ -37,7 +37,7 @@ pub async fn procmacro(
 	ctx.say(stub_message(ctx)).await?;
 
 	let macro_code = macro_code.code;
-	let usage_code = maybe_wrap(&usage_code.code, ResultHandling::None);
+	let usage_code = maybe_wrapped(&usage_code.code, ResultHandling::None, false);
 
 	let (flags, flag_parse_errors) = parse_flags(flags);
 
