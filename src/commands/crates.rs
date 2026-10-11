@@ -85,24 +85,28 @@ fn format_number(mut n: u64) -> String {
 }
 
 async fn autocomplete_crate(ctx: Context<'_>, partial: &str) -> impl Iterator<Item = String> {
-	let http = &ctx.data().http;
+	async {
+		let http = &ctx.data().http;
 
-	let response = http
-		.get("https://crates.io/api/v1/crates")
-		.header(header::USER_AGENT, USER_AGENT)
-		.query(&[("q", partial), ("per_page", "25"), ("sort", "downloads")])
-		.send()
-		.await;
+		let response = http
+			.get("https://crates.io/api/v1/crates")
+			.header(header::USER_AGENT, USER_AGENT)
+			.query(&[("q", partial), ("per_page", "25"), ("sort", "downloads")])
+			.send()
+			.await;
 
-	let crate_list = match response {
-		Ok(response) => response.json::<Crates>().await.ok(),
-		Err(_) => None,
-	};
+		let crate_list = match response {
+			Ok(response) => response.json::<Crates>().await.ok(),
+			Err(_) => None,
+		};
 
-	crate_list
-		.map_or(Vec::new(), |list| list.crates)
-		.into_iter()
-		.map(|crate_| crate_.name)
+		crate_list
+			.map_or(Vec::new(), |list| list.crates)
+			.into_iter()
+			.map(|crate_| crate_.name)
+	}
+	.instrument(crate::helpers::discord_operation_span("autocomplete.crate"))
+	.await
 }
 
 /// Lookup crates on crates.io

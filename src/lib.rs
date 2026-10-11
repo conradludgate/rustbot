@@ -195,30 +195,6 @@ pub async fn build_bot(config: BotConfig) -> Result<serenity::Client, Error> {
 					}
 				})
 			},
-			// This code is run before every command
-			pre_command: |ctx| {
-				Box::pin(async move {
-					let channel_name = &ctx
-						.channel_id()
-						.name(&ctx)
-						.await
-						.unwrap_or_else(|_| "<unknown>".to_owned());
-					let author = &ctx.author().name;
-
-					info!(
-						"{} in {} used slash command '{}'",
-						author,
-						channel_name,
-						&ctx.invoked_command_name()
-					);
-				})
-			},
-			// This code is run after a command if it was successful (returned Ok)
-			post_command: |ctx| {
-				Box::pin(async move {
-					info!("Executed command {}!", ctx.command().qualified_name);
-				})
-			},
 			// Every command invocation must pass this check to continue execution
 			command_check: Some(|_ctx| Box::pin(async move { Ok(true) })),
 			// Enforce command checks even for owners (enforced by default)
@@ -356,47 +332,68 @@ async fn event_handler(
 			{
 				let hl = data.highlights.read().await;
 				let matches = hl.find(&new_message.content);
-				let message_link = new_message.link();
-				let message_link = &*message_link;
-				let mut stream = futures::stream::iter(matches)
-					.map(|(person_id, matcher)| async move {
-						if let Ok(member) = gid.member(ctx, person_id).await
-							&& let Ok(p) = gid.to_partial_guild(ctx).await
-							&& let Ok(Some(channel)) = if let Ok(Some(x)) = p
-								.channels(ctx)
-								.await
-								.map(|x| x.get(&new_message.channel_id).cloned())
-							{
-								Ok(Some(x))
-							} else {
-								p.get_active_threads(ctx).await.map(|x| {
-									x.threads
-										.iter()
-										.find(|th| th.id == new_message.channel_id)
-										.cloned()
-								})
-							} && let perms = p.user_permissions_in(&channel, &member)
-							&& perms.contains(Permissions::VIEW_CHANNEL)
-							&& (channel.kind != ChannelType::PrivateThread
-								|| channel
-									.id
-									.get_thread_member(ctx, member.user.id, true)
-									.await
-									.ok()
-									.map(|x| x.user_id) == Some(member.user.id))
-						{
-							_ = person_id
-								.direct_message(
-									ctx,
-									serenity::CreateMessage::new().content(format!(
-										"your match `{matcher}` was satisfied on message {message_link}",
-									)),
-								)
-								.await;
-						}
-					})
-					.buffer_unordered(8);
-				while let Some(()) = stream.next().await {}
+				if !matches.is_empty() {
+					let span = tracing::info_span!(
+						"discord.event.highlight_trigger",
+						guild.id = gid.get(),
+						channel.id = new_message.channel_id.get(),
+						message.id = new_message.id.get(),
+						highlight.count = matches.len(),
+					);
+					async {
+						let message_link = new_message.link();
+						let message_link = &*message_link;
+						let mut stream = futures::stream::iter(matches)
+							.map(|(person_id, matcher)| {
+								let span = tracing::info_span!(
+									"discord.operation",
+									method = "highlight.notify",
+									recipient.id = person_id.get(),
+								);
+								async move {
+									if let Ok(member) = gid.member(ctx, person_id).await
+										&& let Ok(p) = gid.to_partial_guild(ctx).await
+										&& let Ok(Some(channel)) = if let Ok(Some(x)) = p
+											.channels(ctx)
+											.await
+											.map(|x| x.get(&new_message.channel_id).cloned())
+										{
+											Ok(Some(x))
+										} else {
+											p.get_active_threads(ctx).await.map(|x| {
+												x.threads
+													.iter()
+													.find(|th| th.id == new_message.channel_id)
+													.cloned()
+											})
+										} && let perms = p.user_permissions_in(&channel, &member)
+										&& perms.contains(Permissions::VIEW_CHANNEL)
+										&& (channel.kind != ChannelType::PrivateThread
+											|| channel
+												.id
+												.get_thread_member(ctx, member.user.id, true)
+												.await
+												.ok()
+												.map(|x| x.user_id) == Some(member.user.id))
+									{
+										_ = person_id
+											.direct_message(
+												ctx,
+												serenity::CreateMessage::new().content(format!(
+													"your match `{matcher}` was satisfied on message {message_link}",
+												)),
+											)
+											.await;
+									}
+								}
+								.instrument(span)
+							})
+							.buffer_unordered(8);
+						while let Some(()) = stream.next().await {}
+					}
+					.instrument(span)
+					.await;
+				}
 			}
 		}
 		serenity::FullEvent::InteractionCreate {
