@@ -53,7 +53,9 @@ upsert one queue entry per user; duplicate observations preserve the deadline an
 retry backoff. Message text is not inspected.
 
 The queue survives bot restarts. A single worker checks up to 100 due entries per
-pass, waking on new entries, the next deadline, or at least every 15 seconds.
+pass, waking only on new or changed entries or the next persisted deadline.
+An empty queue sleeps indefinitely; duplicate observations do not wake the worker.
+Database failures use a 60-second retry timer.
 It fetches each member before assigning to check the current join time, existing
 role, and membership screening.
 Departed members are discarded; failures retry after 60 seconds. Leaving and

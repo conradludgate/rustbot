@@ -99,7 +99,7 @@ async fn successful_assignment_exports_workflow_database_and_discord_children() 
 				.process_due(&http(&server), JOINED + DELAY)
 				.await
 				.unwrap();
-			service.next_wake().await.unwrap();
+			service.next_wake(JOINED).await.unwrap();
 		}
 		.instrument(origin)
 		.await;
@@ -271,7 +271,7 @@ async fn queue_errors_are_visible_on_query_and_workflow_spans() {
 				.await
 				.is_err()
 		);
-		assert!(service.next_wake().await.is_err());
+		assert!(service.next_wake(JOINED).await.is_err());
 	}
 	.with_subscriber(subscriber)
 	.await;

@@ -46,6 +46,19 @@ pub struct Rustification {
 	worker: Mutex<Option<JoinHandle<()>>>,
 }
 
+/// Notify retains a permit if an enqueue races the deadline query or this wait.
+async fn wait_for_work(wake: &Notify, sleep: Option<Duration>) {
+	tokio::select! {
+		() = wake.notified() => {},
+		() = async {
+			match sleep {
+				Some(sleep) => tokio::time::sleep(sleep).await,
+				None => std::future::pending::<()>().await,
+			}
+		} => {},
+	}
+}
+
 impl Rustification {
 	#[must_use]
 	pub fn new(
@@ -81,21 +94,21 @@ impl Rustification {
 				let Some(service) = service.upgrade() else {
 					return;
 				};
-				if let Err(error) = service.process_due(&http, now()).await {
-					warn!(%error, "Failed to process Rustacean assignments");
-				}
-				let sleep = match service.next_wake().await {
-					Ok(sleep) => sleep,
+				let sleep = match service.process_due(&http, now()).await {
 					Err(error) => {
-						warn!(guild.id = service.guild_id.get(), %error, "Failed to load Rustacean worker deadline");
-						Duration::from_secs(15)
+						warn!(%error, "Failed to process Rustacean assignments");
+						Some(Duration::from_secs(RETRY as u64))
 					}
+					Ok(()) => match service.next_wake(now()).await {
+						Ok(sleep) => sleep,
+						Err(error) => {
+							warn!(guild.id = service.guild_id.get(), %error, "Failed to load Rustacean worker deadline");
+							Some(Duration::from_secs(RETRY as u64))
+						}
+					},
 				};
 				drop(service);
-				tokio::select! {
-					() = wake.notified() => {},
-					() = tokio::time::sleep(sleep) => {},
-				}
+				wait_for_work(&wake, sleep).await;
 			}
 		}));
 	}
@@ -178,7 +191,7 @@ impl Rustification {
 	#[tracing::instrument(name = "rustification.next_wake", skip_all,
         fields(guild.id = self.guild_id.get(), rustification.sleep_seconds = tracing::field::Empty,
             otel.status_code = tracing::field::Empty, error.type = tracing::field::Empty))]
-	async fn next_wake(&self) -> Result<Duration> {
+	async fn next_wake(&self, now: i64) -> Result<Option<Duration>> {
 		let due = sqlite_query(
 			"SELECT",
 			"rustification_queue",
@@ -190,9 +203,13 @@ impl Rustification {
 		)
 		.await
 		.inspect_err(|_| record_failure("rustification.queue"))?;
-		let seconds = due.map_or(15, |due| (due - now()).clamp(1, 15));
-		Span::current().record("rustification.sleep_seconds", seconds);
-		Ok(Duration::from_secs(seconds.unsigned_abs()))
+		// No entries means no timer. Overdue entries (including a full batch's
+		// remainder) run immediately; future entries sleep until their deadline.
+		let seconds = due.map(|due| due.saturating_sub(now).max(0));
+		if let Some(seconds) = seconds {
+			Span::current().record("rustification.sleep_seconds", seconds);
+		}
+		Ok(seconds.map(|seconds| Duration::from_secs(seconds.unsigned_abs())))
 	}
 
 	#[tracing::instrument(name = "rustification.process_due", parent = None, skip_all,
@@ -844,6 +861,82 @@ mod tests {
 		})
 		.await
 		.expect("worker retained service after shutdown");
+	}
+
+	#[tokio::test]
+	async fn worker_sleeps_until_the_earliest_deadline_without_periodic_polling() {
+		let service = service().await;
+		assert_eq!(service.next_wake(JOINED).await.unwrap(), None);
+		service
+			.enqueue(serenity::UserId::new(2), Some(JOINED), JOINED)
+			.await
+			.unwrap();
+		assert_eq!(
+			service.next_wake(JOINED).await.unwrap(),
+			Some(Duration::from_secs(DELAY as u64))
+		);
+		service
+			.enqueue(serenity::UserId::new(4), Some(JOINED - 600), JOINED)
+			.await
+			.unwrap();
+		assert_eq!(
+			service.next_wake(JOINED).await.unwrap(),
+			Some(Duration::from_secs((DELAY - 600) as u64))
+		);
+		assert_eq!(
+			service.next_wake(JOINED + DELAY).await.unwrap(),
+			Some(Duration::ZERO)
+		);
+	}
+
+	#[tokio::test]
+	async fn empty_queue_waits_for_new_work_and_deadline_waits_can_be_interrupted() {
+		let wake = Notify::new();
+		assert!(
+			tokio::time::timeout(Duration::from_millis(20), wait_for_work(&wake, None))
+				.await
+				.is_err()
+		);
+		// Enqueues before the wait retain a permit, including when no deadline exists.
+		for sleep in [None, Some(Duration::from_mins(30))] {
+			wake.notify_one();
+			tokio::time::timeout(Duration::from_secs(1), wait_for_work(&wake, sleep))
+				.await
+				.unwrap();
+		}
+		tokio::time::timeout(
+			Duration::from_secs(1),
+			wait_for_work(&wake, Some(Duration::from_millis(10))),
+		)
+		.await
+		.unwrap();
+	}
+
+	#[tokio::test]
+	async fn duplicate_observations_do_not_wake_the_worker() {
+		let service = service().await;
+		service
+			.enqueue(serenity::UserId::new(2), Some(JOINED), JOINED)
+			.await
+			.unwrap();
+		service.wake.notified().await;
+		service
+			.enqueue(serenity::UserId::new(2), Some(JOINED), JOINED + 1)
+			.await
+			.unwrap();
+		assert!(
+			tokio::time::timeout(Duration::from_millis(20), service.wake.notified())
+				.await
+				.is_err()
+		);
+		// A rejoin is new work and must recalculate the deadline.
+		service
+			.enqueue(serenity::UserId::new(2), Some(JOINED + 10), JOINED + 10)
+			.await
+			.unwrap();
+		tokio::time::timeout(Duration::from_secs(1), service.wake.notified())
+			.await
+			.unwrap();
 	}
 
 	#[tokio::test]
