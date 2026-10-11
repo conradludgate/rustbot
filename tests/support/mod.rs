@@ -102,29 +102,89 @@ impl TestBot {
 	pub async fn send(mut self, command: &str) -> Result<CommandResponse> {
 		let reply = self.run_command(command).await;
 
-		// Clean up even when injection or polling fails; report the command error first.
-		self.stop_bot().await;
-		let cleanup = self.discord.cleanup().await;
+		let requests = self.finish().await;
 
 		let reply = reply.with_context(|| format!("command: {command}"))?;
-		cleanup.context("removing the Fauxcord test setup")?;
-
-		let requests = self
-			.api
-			.received_requests()
-			.await
-			.context("WireMock request recording disabled")?;
-
-		self.api.verify().await;
+		let requests = requests?;
 
 		Ok(CommandResponse { reply, requests })
 	}
 
+	/// Run a command while retaining the bot for follow-up gateway events.
+	pub async fn command(&mut self, command: &str) -> Result<String> {
+		self.run_command(command)
+			.await
+			.with_context(|| format!("command: {command}"))
+	}
+
+	/// Inject a non-command message authored by this test's user.
+	pub async fn inject_message(&self, content: &str) -> Result<()> {
+		self.discord.inject_message(content).await
+	}
+
+	/// Deny the highlight owner visibility of the test's restricted channel.
+	pub async fn restrict_channel_visibility(&self) -> Result<()> {
+		self.discord
+			.deny_view_permission(&self.discord.restricted_channel)
+			.await
+	}
+
+	/// Inject a non-command message into the restricted channel.
+	pub async fn inject_restricted_message(&self, content: &str) -> Result<()> {
+		self.discord
+			.inject_message_in(&self.discord.restricted_channel, content)
+			.await
+	}
+
+	/// Wait for a DM sent by the bot to this test's user.
+	pub async fn wait_for_dm(&mut self, accept: impl Fn(&str) -> bool) -> Result<String> {
+		let deadline = tokio::time::Instant::now() + REPLY_TIMEOUT;
+
+		loop {
+			let messages = self.discord.bot_dm_messages().await?;
+			if let Some(message) = messages.iter().find(|content| accept(content)) {
+				return Ok(message.clone());
+			}
+
+			if self.bot_task.as_ref().is_some_and(JoinHandle::is_finished) {
+				bail!("bot stopped before sending a DM; observed messages: {messages:#?}");
+			}
+
+			if tokio::time::Instant::now() >= deadline {
+				bail!("no bot DM within {REPLY_TIMEOUT:?}; observed messages: {messages:#?}");
+			}
+
+			tokio::time::sleep(POLL_INTERVAL).await;
+		}
+	}
+
+	/// Return current DMs sent by the bot to this test's user.
+	pub async fn dm_messages(&self) -> Result<Vec<String>> {
+		self.discord.bot_dm_messages().await
+	}
+
+	/// Stop this bot, remove its Fauxcord state, and verify upstream HTTP mocks.
+	pub async fn finish(mut self) -> Result<Vec<Request>> {
+		self.stop_bot().await;
+		let cleanup = self.discord.cleanup().await;
+		let requests = self
+			.api
+			.received_requests()
+			.await
+			.context("WireMock request recording disabled");
+		self.api.verify().await;
+
+		cleanup.context("removing the Fauxcord test setup")?;
+		requests
+	}
+
 	async fn run_command(&mut self, command: &str) -> Result<String> {
+		let channel = self.discord.command_channel.clone();
+		let previous_reply_count = self.discord.bot_messages(&channel).await?.len();
 		self.discord.inject_command(command).await?;
 
-		let channel = self.discord.command_channel.clone();
-		self.wait_for_message(&channel, is_final_reply).await
+		self.wait_for_message_after(&channel, previous_reply_count, is_final_reply)
+			.await
 	}
 
 	async fn wait_for_message(
@@ -132,12 +192,25 @@ impl TestBot {
 		channel: &str,
 		accept: fn(&str) -> bool,
 	) -> Result<String> {
+		self.wait_for_message_after(channel, 0, accept).await
+	}
+
+	async fn wait_for_message_after(
+		&mut self,
+		channel: &str,
+		previous_message_count: usize,
+		accept: fn(&str) -> bool,
+	) -> Result<String> {
 		let deadline = tokio::time::Instant::now() + REPLY_TIMEOUT;
 
 		loop {
 			let replies = self.discord.bot_messages(channel).await?;
 
-			if let Some(reply) = replies.iter().find(|content| accept(content)) {
+			if let Some(reply) = replies
+				.iter()
+				.skip(previous_message_count)
+				.find(|content| accept(content))
+			{
 				return Ok(reply.clone());
 			}
 

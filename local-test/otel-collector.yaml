@@ -1,0 +1,65 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 192
+    spike_limit_mib: 32
+  tail_sampling:
+    decision_wait: 3s
+    expected_new_traces_per_sec: 2
+    num_traces: 1000
+    sample_on_first_match: false
+    policies:
+      # Drop non-matching highlight checks unless selected by the 1% baseline.
+      # A matching message-check trace bypasses this drop rule.
+      - name: sample-unmatched-highlight-checks
+        type: drop
+        drop:
+          drop_sub_policy:
+            - name: is-highlight-check
+              type: string_attribute
+              string_attribute:
+                key: sampling.class
+                values: [message_highlight_check]
+            - name: did-not-match
+              type: not
+              not:
+                not_sub_policy:
+                  name: highlight-match
+                  type: boolean_attribute
+                  boolean_attribute:
+                    key: highlight.matched
+                    value: true
+            - name: missed-baseline-sample
+              type: not
+              not:
+                not_sub_policy:
+                  name: baseline-sample
+                  type: probabilistic
+                  probabilistic:
+                    sampling_percentage: 1
+      # Fail open: every other trace, including matches and commands, is kept.
+      - name: keep-everything-else
+        type: always_sample
+  batch: {}
+
+exporters:
+  otlp_http/jaeger:
+    endpoint: http://jaeger:4318
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, tail_sampling, batch]
+      exporters: [otlp_http/jaeger]

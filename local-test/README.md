@@ -1,8 +1,9 @@
 # Local Discord and tracing stack
 
-Run Ferrisbot against Fauxcord (a local Discord REST API and Gateway mock) and
-Jaeger using a fake bot token and isolated Docker volumes. Interactive
-Playground and Godbolt commands contact the public APIs.
+Run Ferrisbot against Fauxcord (a local Discord REST API and Gateway mock), an
+OpenTelemetry Collector tail sampler, and Jaeger using a fake bot token and
+isolated Docker volumes. Interactive Playground and Godbolt commands contact
+the public APIs.
 
 For Rust integration tests, snapshot review, and API fixture refreshes, see
 [the test guide](../tests/README.md).
@@ -15,11 +16,17 @@ Run from the repository root:
 docker compose -f compose.local.yaml up --build
 ```
 
-Configuration is in `local-test/config/`. Open Jaeger at
-<http://localhost:16686> and select the `ferrisbot-local` service. Sampling is
-set to 100%; the log filter keeps application `INFO` spans and suppresses
-Serenity spans. Command spans are named `discord.command.<command>`, with the
-invoked command name in the `command` attribute.
+Configuration is in `local-test/`. Open Jaeger at <http://localhost:16686> and
+select the `ferrisbot-local` service. Rustbot exports every span to the local
+Collector. It keeps all traces except message highlight checks, which are
+sampled at 1%; a check that matches is always kept. Command spans are named
+`discord.command.<command>`, with the invoked command name in the `command`
+attribute. The Collector adds up to three seconds of visibility delay while it
+waits to decide.
+
+The `ferris` service depends on `otel-collector`; traces flow through the
+Collector to Jaeger. The Collector's OTLP endpoint is also available on
+`localhost:4319` for local OTLP experiments.
 
 ## Send a command
 

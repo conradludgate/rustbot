@@ -15,8 +15,7 @@ use std::time::Duration;
 use tracing::Instrument as _;
 
 use anyhow::{Error, anyhow};
-use futures::StreamExt;
-use poise::serenity_prelude::{self as serenity, ChannelType, Permissions};
+use poise::serenity_prelude as serenity;
 use tracing::{debug, info, warn};
 
 use crate::commands::modmail::{create_modmail_thread, load_or_create_modmail_message};
@@ -330,70 +329,17 @@ async fn event_handler(
 			if let Some(gid) = new_message.guild_id
 				&& !new_message.author.bot
 			{
-				let hl = data.highlights.read().await;
-				let matches = hl.find(&new_message.content);
-				if !matches.is_empty() {
-					let span = tracing::info_span!(
-						"discord.event.highlight_trigger",
-						guild.id = gid.get(),
-						channel.id = new_message.channel_id.get(),
-						message.id = new_message.id.get(),
-						highlight.count = matches.len(),
-					);
-					async {
-						let message_link = new_message.link();
-						let message_link = &*message_link;
-						let mut stream = futures::stream::iter(matches)
-							.map(|(person_id, matcher)| {
-								let span = tracing::info_span!(
-									"discord.operation",
-									method = "highlight.notify",
-									recipient.id = person_id.get(),
-								);
-								async move {
-									if let Ok(member) = gid.member(ctx, person_id).await
-										&& let Ok(p) = gid.to_partial_guild(ctx).await
-										&& let Ok(Some(channel)) = if let Ok(Some(x)) = p
-											.channels(ctx)
-											.await
-											.map(|x| x.get(&new_message.channel_id).cloned())
-										{
-											Ok(Some(x))
-										} else {
-											p.get_active_threads(ctx).await.map(|x| {
-												x.threads
-													.iter()
-													.find(|th| th.id == new_message.channel_id)
-													.cloned()
-											})
-										} && let perms = p.user_permissions_in(&channel, &member)
-										&& perms.contains(Permissions::VIEW_CHANNEL)
-										&& (channel.kind != ChannelType::PrivateThread
-											|| channel
-												.id
-												.get_thread_member(ctx, member.user.id, true)
-												.await
-												.ok()
-												.map(|x| x.user_id) == Some(member.user.id))
-									{
-										_ = person_id
-											.direct_message(
-												ctx,
-												serenity::CreateMessage::new().content(format!(
-													"your match `{matcher}` was satisfied on message {message_link}",
-												)),
-											)
-											.await;
-									}
-								}
-								.instrument(span)
-							})
-							.buffer_unordered(8);
-						while let Some(()) = stream.next().await {}
-					}
+				let span = tracing::info_span!(
+					"discord.event.message_highlight_check",
+					sampling.class = "message_highlight_check",
+					highlight.matched = tracing::field::Empty,
+					guild.id = gid.get(),
+					channel.id = new_message.channel_id.get(),
+					message.id = new_message.id.get(),
+				);
+				commands::highlight::check_message(ctx, data, gid, new_message, span.clone())
 					.instrument(span)
 					.await;
-				}
 			}
 		}
 		serenity::FullEvent::InteractionCreate {

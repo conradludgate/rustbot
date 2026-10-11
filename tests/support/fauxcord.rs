@@ -14,6 +14,7 @@ pub(super) struct TestDiscord {
 	bot_id: String,
 	pub(super) guild_id: String,
 	pub(super) command_channel: String,
+	pub(super) restricted_channel: String,
 	pub(super) modmail_channel: String,
 	modlog_channel: String,
 	user_id: String,
@@ -38,6 +39,7 @@ impl TestDiscord {
 					"name": "Snapshot test",
 					"channels": [
 						{ "name": "command", "type": 0 },
+							{ "name": "restricted", "type": 0 },
 						{ "name": "modmail", "type": 0 },
 						{ "name": "bot-log", "type": 0 }
 					]
@@ -79,6 +81,9 @@ impl TestDiscord {
 			command_channel: channels
 				.remove("command")
 				.context("missing command channel")?,
+			restricted_channel: channels
+				.remove("restricted")
+				.context("missing restricted channel")?,
 			modmail_channel: channels
 				.remove("modmail")
 				.context("missing modmail channel")?,
@@ -109,14 +114,42 @@ impl TestDiscord {
 
 	pub(super) async fn inject_command(&self, command: &str) -> Result<()> {
 		// Fauxcord broadcasts across guilds; a mention targets only this test's bot.
+		self.inject_message(&format!("<@{}> {command}", self.bot_id))
+			.await
+	}
+
+	pub(super) async fn inject_message(&self, content: &str) -> Result<()> {
+		self.inject_message_in(&self.command_channel, content).await
+	}
+
+	pub(super) async fn inject_message_in(&self, channel_id: &str, content: &str) -> Result<()> {
 		self.client
 			.post(format!(
-				"{}/_test/channels/{}/messages",
-				self.base_url, self.command_channel
+				"{}/_test/channels/{channel_id}/messages",
+				self.base_url
 			))
 			.json(&json!({
-				"content": format!("<@{}> {command}", self.bot_id),
+				"content": content,
 				"author": { "id": self.user_id }
+			}))
+			.send()
+			.await?
+			.error_for_status()?;
+
+		Ok(())
+	}
+
+	pub(super) async fn deny_view_permission(&self, channel_id: &str) -> Result<()> {
+		self.client
+			.put(format!(
+				"{}/api/v10/channels/{channel_id}/permissions/{}",
+				self.base_url, self.user_id
+			))
+			.header("Authorization", format!("Bot {}", self.bot_token))
+			.json(&json!({
+				"type": 1,
+				"allow": "0",
+				"deny": poise::serenity_prelude::Permissions::VIEW_CHANNEL.bits().to_string()
 			}))
 			.send()
 			.await?
@@ -137,6 +170,36 @@ impl TestDiscord {
 
 		let author = format!("Bot {}", self.bot_token);
 
+		Ok(response
+			.messages
+			.into_iter()
+			.filter(|message| message.author_token.as_deref() == Some(author.as_str()))
+			.map(|message| message.content)
+			.collect())
+	}
+
+	pub(super) async fn bot_dm_messages(&self) -> Result<Vec<String>> {
+		let channel: DmChannel = self
+			.client
+			.post(format!("{}/api/v10/users/@me/channels", self.base_url))
+			.header("Authorization", format!("Bot {}", self.bot_token))
+			.json(&json!({ "recipient_id": self.user_id }))
+			.send()
+			.await?
+			.error_for_status()?
+			.json()
+			.await?;
+
+		let response: ChannelMessages = self
+			.client
+			.get(format!("{}/_test/messages/{}", self.base_url, channel.id))
+			.send()
+			.await?
+			.error_for_status()?
+			.json()
+			.await?;
+
+		let author = format!("Bot {}", self.bot_token);
 		Ok(response
 			.messages
 			.into_iter()
@@ -184,6 +247,11 @@ struct User {
 #[derive(Deserialize)]
 struct ChannelMessages {
 	messages: Vec<Message>,
+}
+
+#[derive(Deserialize)]
+struct DmChannel {
+	id: String,
 }
 
 #[derive(Deserialize)]

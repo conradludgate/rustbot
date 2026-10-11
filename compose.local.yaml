@@ -35,6 +35,22 @@ services:
       - "127.0.0.1:16686:16686"
       - "127.0.0.1:4318:4318"
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./local-test/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on:
+      jaeger:
+        condition: service_started
+    environment:
+      NO_PROXY: localhost,127.0.0.1,jaeger
+      no_proxy: localhost,127.0.0.1,jaeger
+    ports:
+      - "127.0.0.1:4319:4318"
+    cpus: 0.5
+    mem_limit: 256m
+
   ferris:
     build:
       context: .
@@ -42,13 +58,13 @@ services:
     depends_on:
       discord-mock:
         condition: service_healthy
-      jaeger:
+      otel-collector:
         condition: service_started
     environment:
       FERRIS_DISCORD_API_PROXY: http://discord-mock:3000
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
-      NO_PROXY: localhost,127.0.0.1,discord-mock,jaeger
-      no_proxy: localhost,127.0.0.1,discord-mock,jaeger
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      NO_PROXY: localhost,127.0.0.1,discord-mock,otel-collector
+      no_proxy: localhost,127.0.0.1,discord-mock,otel-collector
       # Ferrisbot currently gates OTLP initialization on this being non-empty;
       # Jaeger does not require or validate this local-only placeholder.
       OTEL_EXPORTER_OTLP_HEADERS: Authorization=local-test-only

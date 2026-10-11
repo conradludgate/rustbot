@@ -122,6 +122,17 @@ images (`ferris` and `owo`). Rotation is seeded paused with `owo` selected, so t
 snapshots do not depend on random icon selection or timing. Expected replies
 are inline `insta` snapshots alongside each command.
 
+## Highlight cases
+
+The highlight cases exercise invalid-pattern rejection, removal from the live
+regex cache, and the message event path. They check that nonmatching messages
+do not send a DM, matching messages do, hidden-channel messages do not notify,
+and removing a pattern stops future notifications. Run only these cases with:
+
+```sh
+cargo test --locked --test fauxcord_snapshots highlight:: -- --ignored
+```
+
 ## Refresh API fixtures
 
 ```sh

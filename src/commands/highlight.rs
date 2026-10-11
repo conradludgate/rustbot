@@ -1,11 +1,15 @@
+use futures::StreamExt as _;
 use std::collections::HashMap;
 use tracing::Instrument as _;
 
-use crate::{require_database, types::Context};
+use crate::{
+	require_database,
+	types::{Context, Data},
+};
 use anyhow::{Error, Result};
 use poise::{
 	CreateReply,
-	serenity_prelude::{CreateEmbed, UserId},
+	serenity_prelude::{self as serenity, ChannelType, CreateEmbed, Permissions, UserId},
 };
 use regex::{Regex, RegexBuilder};
 use sqlx::{Pool, Sqlite};
@@ -181,6 +185,16 @@ pub async fn mat(c: Context<'_>, haystack: String) -> Result<()> {
 #[derive(Debug)]
 pub struct RegexHolder(Vec<(UserId, Regex)>);
 impl RegexHolder {
+	#[must_use]
+	pub fn len(&self) -> usize {
+		self.0.len()
+	}
+
+	#[must_use]
+	pub fn is_empty(&self) -> bool {
+		self.0.is_empty()
+	}
+
 	pub async fn new(db: Option<&Pool<Sqlite>>) -> Self {
 		use tracing::warn;
 
@@ -218,9 +232,104 @@ impl RegexHolder {
 	pub fn find(&self, haystack: &str) -> HashMap<UserId, String> {
 		self.0
 			.iter()
-			.filter(|&(_user_id, regex)| regex.is_match(haystack))
-			.map(|(user_id, regex)| (*user_id, regex.as_str().to_string()))
+			.enumerate()
+			.filter_map(|(index, (user_id, regex))| {
+				// Keep per-regex spans opt-in: one span per regex on every message can be noisy.
+				let span = tracing::debug_span!(
+					"discord.regex.highlight_match",
+					regex.index = index,
+					regex.matched = tracing::field::Empty,
+				);
+				let matched = span.in_scope(|| regex.is_match(haystack));
+				span.record("regex.matched", matched);
+				matched.then(|| (*user_id, regex.as_str().to_string()))
+			})
 			.collect()
+	}
+}
+
+pub async fn check_message(
+	ctx: &serenity::Context,
+	data: &Data,
+	gid: serenity::GuildId,
+	new_message: &serenity::Message,
+	span: tracing::Span,
+) {
+	let highlights = data.highlights.read().await;
+	let regex_span = tracing::info_span!(
+		"discord.regex.highlight_check",
+		regex.count = highlights.len()
+	);
+	let matches = regex_span.in_scope(|| highlights.find(&new_message.content));
+	if !matches.is_empty() {
+		span.record("highlight.matched", true);
+		let trigger_span = tracing::info_span!(
+			"discord.event.highlight_trigger",
+			highlight.count = matches.len(),
+		);
+		trigger(ctx, gid, new_message, matches)
+			.instrument(trigger_span)
+			.await;
+	}
+}
+
+async fn trigger(
+	ctx: &serenity::Context,
+	gid: serenity::GuildId,
+	new_message: &serenity::Message,
+	matches: HashMap<UserId, String>,
+) {
+	let message_link = new_message.link();
+	let channel_id = new_message.channel_id;
+	let mut stream = futures::stream::iter(matches)
+		.map(|(person_id, matcher)| {
+			let span = tracing::info_span!(
+				"discord.operation",
+				method = "highlight.notify",
+				recipient.id = person_id.get(),
+			);
+			notify_match(ctx, gid, channel_id, person_id, matcher, &message_link).instrument(span)
+		})
+		.buffer_unordered(8);
+	while let Some(()) = stream.next().await {}
+}
+
+async fn notify_match(
+	ctx: &serenity::Context,
+	gid: serenity::GuildId,
+	channel_id: serenity::ChannelId,
+	person_id: UserId,
+	matcher: String,
+	message_link: &str,
+) {
+	if let Ok(member) = gid.member(ctx, person_id).await
+		&& let Ok(p) = gid.to_partial_guild(ctx).await
+		&& let Ok(Some(channel)) =
+			if let Ok(Some(channel)) = p.channels(ctx).await.map(|x| x.get(&channel_id).cloned()) {
+				Ok(Some(channel))
+			} else {
+				p.get_active_threads(ctx)
+					.await
+					.map(|x| x.threads.iter().find(|th| th.id == channel_id).cloned())
+			} && let perms = p.user_permissions_in(&channel, &member)
+		&& perms.contains(Permissions::VIEW_CHANNEL)
+		&& (channel.kind != ChannelType::PrivateThread
+			|| channel
+				.id
+				.get_thread_member(ctx, member.user.id, true)
+				.await
+				.ok()
+				.map(|x| x.user_id)
+				== Some(member.user.id))
+	{
+		_ = person_id
+			.direct_message(
+				ctx,
+				serenity::CreateMessage::new().content(format!(
+					"your match `{matcher}` was satisfied on message {message_link}",
+				)),
+			)
+			.await;
 	}
 }
 

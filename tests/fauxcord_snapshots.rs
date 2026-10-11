@@ -1,3 +1,4 @@
+mod highlight;
 mod server_icon;
 mod support;
 
