@@ -41,7 +41,7 @@ struct CompletedChecks;
 
 impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for CompletedChecks {
 	fn on_new_span(&self, attributes: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
-		if attributes.metadata().name() != "discord.event.message_highlight_check" {
+		if attributes.metadata().name() != "highlight.check_message" {
 			return;
 		}
 		let mut check = Check::default();
@@ -66,7 +66,7 @@ pub(super) fn initialize() {
 	INITIALIZE.call_once(|| {
 		let subscriber = tracing_subscriber::registry().with(CompletedChecks.with_filter(
 			tracing_subscriber::filter::filter_fn(|metadata| {
-				metadata.name() == "discord.event.message_highlight_check"
+				metadata.name() == "highlight.check_message"
 			}),
 		));
 		tracing::subscriber::set_global_default(subscriber)

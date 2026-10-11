@@ -19,7 +19,7 @@ use super::{
 	category = "Playground"
 )]
 #[tracing::instrument(
-	name = "discord.command.procmacro",
+	name = "command.procmacro",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

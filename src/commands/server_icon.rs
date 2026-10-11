@@ -352,6 +352,7 @@ async fn apply_icon(
 			.await?;
 		guild_id
 			.edit(ctx, serenity::EditGuild::new().icon(Some(&attachment)))
+			.instrument(crate::helpers::discord_operation_span("guild.edit"))
 			.await?;
 		Ok::<(), Error>(())
 	})
@@ -543,7 +544,7 @@ fn image_url(path: &str) -> Result<String, Error> {
 	)
 )]
 #[tracing::instrument(
-	name = "discord.command.server_icon",
+	name = "command.server_icon",
 	skip_all,
 	fields(command = %ctx.command().qualified_name),
 	err(Debug),
@@ -559,7 +560,7 @@ pub async fn server_icon(ctx: Context<'_>) -> Result<(), Error> {
 	category = "Utilities"
 )]
 #[tracing::instrument(
-	name = "discord.command.server_icon.status",
+	name = "command.server_icon.status",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -598,7 +599,7 @@ pub async fn server_icon_status(ctx: Context<'_>) -> Result<(), Error> {
 
 #[poise::command(slash_command, prefix_command, rename = "list", category = "Utilities")]
 #[tracing::instrument(
-	name = "discord.command.server_icon.list",
+	name = "command.server_icon.list",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -639,7 +640,7 @@ pub async fn server_icon_list(ctx: Context<'_>) -> Result<(), Error> {
 	check = "crate::checks::check_is_moderator"
 )]
 #[tracing::instrument(
-	name = "discord.command.server_icon.pause",
+	name = "command.server_icon.pause",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -673,7 +674,7 @@ pub async fn server_icon_pause(ctx: Context<'_>) -> Result<(), Error> {
 	check = "crate::checks::check_is_moderator"
 )]
 #[tracing::instrument(
-	name = "discord.command.server_icon.resume",
+	name = "command.server_icon.resume",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -707,7 +708,7 @@ pub async fn server_icon_resume(ctx: Context<'_>) -> Result<(), Error> {
 	check = "crate::checks::check_is_moderator"
 )]
 #[tracing::instrument(
-	name = "discord.command.server_icon.set",
+	name = "command.server_icon.set",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

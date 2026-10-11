@@ -59,7 +59,7 @@ struct TagStatsMember {
 /// Display a tag.
 #[poise::command(slash_command, category = "Tags")]
 #[tracing::instrument(
-	name = "discord.command.tags.tag",
+	name = "command.tags.tag",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -99,7 +99,7 @@ pub async fn tag(ctx: Context<'_>, name: String) -> Result<(), Error> {
 	)
 )]
 #[tracing::instrument(
-	name = "discord.command.tags",
+	name = "command.tags",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -123,7 +123,7 @@ pub async fn tags(ctx: Context<'_>) -> Result<(), Error> {
 	aliases("add")
 )]
 #[tracing::instrument(
-	name = "discord.command.tags.create",
+	name = "command.tags.create",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -163,7 +163,7 @@ pub async fn tags_create(ctx: Context<'_>, name: String, content: String) -> Res
 	aliases("remove")
 )]
 #[tracing::instrument(
-	name = "discord.command.tags.delete",
+	name = "command.tags.delete",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -186,7 +186,7 @@ pub async fn tags_delete(ctx: Context<'_>, name: String) -> Result<(), Error> {
 /// Creates an alias for an already existing tag so you can call it with either of the names.
 #[poise::command(rename = "alias", slash_command, ephemeral, category = "Tags")]
 #[tracing::instrument(
-	name = "discord.command.tags.alias",
+	name = "command.tags.alias",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -218,7 +218,7 @@ pub async fn tags_alias(ctx: Context<'_>, existing: String, new: String) -> Resu
 /// Edits the content of an already existing tag.
 #[poise::command(rename = "edit", slash_command, ephemeral, category = "Tags")]
 #[tracing::instrument(
-	name = "discord.command.tags.edit",
+	name = "command.tags.edit",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -254,7 +254,7 @@ pub async fn tags_edit(ctx: Context<'_>, name: String, content: String) -> Resul
 /// This will make the bot post the content in the bot-channel and ping the author upon being used.
 #[poise::command(rename = "restrict", slash_command, ephemeral, category = "Tags")]
 #[tracing::instrument(
-	name = "discord.command.tags.restrict",
+	name = "command.tags.restrict",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -277,7 +277,7 @@ pub async fn tags_restrict(ctx: Context<'_>, name: String) -> Result<(), Error> 
 /// Shows information about the server tags. If you mention someone, it will show their tags instead.
 #[poise::command(rename = "stats", slash_command, ephemeral, category = "Tags")]
 #[tracing::instrument(
-	name = "discord.command.tags.stats",
+	name = "command.tags.stats",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -380,7 +380,7 @@ async fn tags_member_stats(
 /// Shows some stats collected about the tag.
 #[poise::command(rename = "info", slash_command, ephemeral, category = "Tags")]
 #[tracing::instrument(
-	name = "discord.command.tags.info",
+	name = "command.tags.info",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -434,7 +434,7 @@ pub async fn tags_info(ctx: Context<'_>, name: String) -> Result<(), Error> {
 /// Lists all tags in the server. If you mention someone, it will show their tags instead.
 #[poise::command(rename = "list", slash_command, ephemeral, category = "Tags")]
 #[tracing::instrument(
-	name = "discord.command.tags.list",
+	name = "command.tags.list",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

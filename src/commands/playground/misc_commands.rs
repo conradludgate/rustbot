@@ -25,7 +25,7 @@ use super::{
 	category = "Playground"
 )]
 #[tracing::instrument(
-	name = "discord.command.miri",
+	name = "command.miri",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -98,7 +98,7 @@ pub fn miri_help() -> String {
 	category = "Playground"
 )]
 #[tracing::instrument(
-	name = "discord.command.expand",
+	name = "command.expand",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -187,7 +187,7 @@ pub fn expand_help() -> String {
 	category = "Playground"
 )]
 #[tracing::instrument(
-	name = "discord.command.clippy",
+	name = "command.clippy",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -268,7 +268,7 @@ pub fn clippy_help() -> String {
 	category = "Playground"
 )]
 #[tracing::instrument(
-	name = "discord.command.fmt",
+	name = "command.fmt",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

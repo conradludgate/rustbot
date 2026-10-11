@@ -330,7 +330,7 @@ fn parse(args: &str) -> Result<(KeyValueArgs, String), CodeBlockError> {
 )]
 #[poise::command(prefix_command, category = "Godbolt", broadcast_typing, track_edits)]
 #[tracing::instrument(
-	name = "discord.command.godbolt",
+	name = "command.godbolt",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -396,7 +396,7 @@ pub async fn godbolt(ctx: Context<'_>, #[rest] arguments: String) -> Result<(), 
 )]
 #[poise::command(prefix_command, category = "Godbolt", broadcast_typing, track_edits)]
 #[tracing::instrument(
-	name = "discord.command.mca",
+	name = "command.mca",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,
@@ -446,7 +446,7 @@ pub async fn mca(ctx: Context<'_>, #[rest] arguments: String) -> Result<(), Erro
 )]
 #[poise::command(prefix_command, category = "Godbolt", broadcast_typing, track_edits)]
 #[tracing::instrument(
-	name = "discord.command.llvmir",
+	name = "command.llvmir",
 	skip_all,
 	fields(
 		command = %ctx.command().qualified_name,

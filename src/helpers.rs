@@ -35,9 +35,18 @@ macro_rules! require_database {
 // Re-export for easier access
 pub use require_database;
 
-/// Create a span for a Discord operation without recording its payload or request tokens.
+/// Trace a Discord SDK operation as an outgoing call without payloads or request tokens.
+/// An SDK operation can use the cache or issue multiple HTTP requests, so do not invent
+/// HTTP methods, URLs, or status codes here. Keep operation names static and low cardinality.
 pub fn discord_operation_span(method: &'static str) -> tracing::Span {
-	info_span!("discord.operation", method)
+	info_span!(
+		"discord.api",
+		otel.name = format!("discord.{method}"),
+		otel.kind = "client",
+		peer.service = "discord",
+		server.address = "discord.com",
+		discord.operation = method,
+	)
 }
 
 /// Used for playground stdout + stderr, or godbolt asm + stderr

@@ -330,7 +330,7 @@ async fn event_handler(
 				&& !new_message.author.bot
 			{
 				let span = tracing::info_span!(
-					"discord.event.message_highlight_check",
+					"highlight.check_message",
 					sampling.class = "message_highlight_check",
 					bot.id = data.application_id.get(),
 					highlight.matched = tracing::field::Empty,

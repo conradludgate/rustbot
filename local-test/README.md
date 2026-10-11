@@ -20,8 +20,13 @@ Configuration is in `local-test/`. Open Jaeger at <http://localhost:16686> and
 select the `ferrisbot-local` service. Rustbot exports every span to the local
 Collector. It keeps all traces except message highlight checks, which are
 sampled at 1%; a check that matches is always kept. Command spans are named
-`discord.command.<command>`, with the invoked command name in the `command`
-attribute. The Collector adds up to three seconds of visibility delay while it
+`command.<command>`, with the invoked command name in the `command`
+attribute. Internal highlight spans use `highlight.*`; each Discord SDK operation
+exports a low-cardinality name such as `discord.guild.member`, with CLIENT span
+kind, `peer.service=discord`, and `server.address=discord.com`. Jaeger uses the
+peer service to distinguish calls to the uninstrumented Discord dependency.
+These spans measure SDK operations (which may use caches or multiple requests),
+not individual HTTP requests. The Collector adds up to three seconds of visibility delay while it
 waits to decide.
 
 The `ferris` service depends on `otel-collector`; traces flow through the
