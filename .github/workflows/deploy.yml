@@ -2,8 +2,6 @@ name: "deploy prod"
 
 on:
   push:
-    branches:
-      - improve-docker-cache
     tags:
       - 'v*'
   workflow_dispatch:
