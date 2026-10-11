@@ -56,6 +56,7 @@ fn join_url(base: &str, path: &str) -> String {
 pub struct Data {
 	pub highlights: RwLock<commands::highlight::RegexHolder>,
 	pub database: Option<sqlx::SqlitePool>,
+	pub rustification: Option<Arc<crate::rustification::Rustification>>,
 	pub discord_guild_id: serenity::GuildId,
 	pub application_id: serenity::UserId,
 	pub mod_role_id: serenity::RoleId,
@@ -79,8 +80,18 @@ impl Data {
 		database: Option<sqlx::SqlitePool>,
 		external_apis: ExternalApiBases,
 		server_icon_directory: PathBuf,
+		rustification_config: crate::rustification::RustificationConfig,
 	) -> Result<Self> {
 		let discord_guild_id = secret_store.get_discord_id("DISCORD_GUILD")?.into();
+		let rustacean_role_id = secret_store.get_discord_id("RUSTACEAN_ROLE_ID")?.into();
+		let rustification = database.clone().map(|pool| {
+			Arc::new(crate::rustification::Rustification::new(
+				pool,
+				discord_guild_id,
+				rustacean_role_id,
+				rustification_config,
+			))
+		});
 		let server_icon_rotation = database.clone().map(|pool| {
 			Arc::new(commands::server_icon::ServerIconRotation::new(
 				pool,
@@ -91,13 +102,14 @@ impl Data {
 		Ok(Self {
 			highlights: RwLock::new(commands::highlight::RegexHolder::new(database.as_ref()).await),
 			database,
+			rustification,
 			discord_guild_id,
 			application_id: secret_store.get_discord_id("APPLICATION_ID")?.into(),
 			mod_role_id: secret_store.get_discord_id("MOD_ROLE_ID")?.into(),
 			mod_consultant_role_id: secret_store
 				.get_discord_id("MOD_CONSULTANT_ROLE_ID")?
 				.into(),
-			rustacean_role_id: secret_store.get_discord_id("RUSTACEAN_ROLE_ID")?.into(),
+			rustacean_role_id,
 			modmail_channel_id: secret_store.get_discord_id("MODMAIL_CHANNEL_ID")?.into(),
 			modlog_channel_id: secret_store.get_discord_id("MODLOG_CHANNEL_ID")?.into(),
 			modmail_message: Arc::default(),

@@ -35,6 +35,7 @@ pub mod checks;
 pub mod commands;
 pub mod discord;
 pub mod helpers;
+pub mod rustification;
 pub mod telemetry;
 pub mod types;
 
@@ -70,11 +71,13 @@ pub async fn serenity(
 	secret_store: SecretStore,
 	database: Option<sqlx::SqlitePool>,
 	intents: serenity::GatewayIntents,
+	rustification: rustification::RustificationConfig,
 ) -> Result<ShuttleSerenity, Error> {
 	let config = BotConfig {
 		secret_store,
 		database,
 		intents,
+		rustification,
 		discord_api_proxy: std::env::var("FERRIS_DISCORD_API_PROXY")
 			.ok()
 			.filter(|proxy| !proxy.trim().is_empty()),
@@ -92,6 +95,7 @@ pub struct BotConfig {
 	pub discord_api_proxy: Option<String>,
 	pub external_apis: ExternalApiBases,
 	pub server_icon_directory: PathBuf,
+	pub rustification: rustification::RustificationConfig,
 }
 
 #[tracing::instrument(name = "bot.build", skip_all, err(Debug))]
@@ -103,6 +107,7 @@ pub async fn build_bot(config: BotConfig) -> Result<serenity::Client, Error> {
 		discord_api_proxy,
 		external_apis,
 		server_icon_directory,
+		rustification,
 	} = config;
 	let token = secret_store
 		.get("DISCORD_TOKEN")
@@ -128,6 +133,7 @@ pub async fn build_bot(config: BotConfig) -> Result<serenity::Client, Error> {
 						database,
 						external_apis,
 						server_icon_directory,
+						rustification,
 					)
 					.await?;
 
@@ -312,26 +318,12 @@ async fn event_handler(
 	);
 
 	match event {
-		serenity::FullEvent::GuildMemberAddition { new_member } => {
-			const RUSTIFICATION_DELAY: u64 = 30; // in minutes
-
-			tokio::time::sleep(Duration::from_secs(RUSTIFICATION_DELAY * 60)).await;
-
-			// Ignore errors because the user may have left already
-			let _: Result<_, _> = ctx
-				.http
-				.add_member_role(
-					new_member.guild_id,
-					new_member.user.id,
-					data.rustacean_role_id,
-					Some(&format!(
-						"Automatically rustified after {RUSTIFICATION_DELAY} minutes"
-					)),
-				)
-				.instrument(crate::helpers::discord_operation_span("member.add_role"))
-				.await;
-		}
 		serenity::FullEvent::Ready { .. } => {
+			if let Some(rustification) = &data.rustification {
+				rustification.start(ctx.http.clone()).await;
+			} else {
+				warn!("Automatic Rustacean assignment disabled because SQLite is disabled");
+			}
 			if let Some(rotation) = &data.server_icon_rotation {
 				rotation.start(ctx.http.clone()).await;
 			} else {
@@ -339,6 +331,11 @@ async fn event_handler(
 			}
 		}
 		serenity::FullEvent::Message { new_message } => {
+			if let Some(rustification) = &data.rustification
+				&& let Err(error) = rustification.observe_message(new_message).await
+			{
+				warn!(%error, "Failed to enqueue Rustacean assignment");
+			}
 			if let Some(gid) = new_message.guild_id
 				&& !new_message.author.bot
 			{

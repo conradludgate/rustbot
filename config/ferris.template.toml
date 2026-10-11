@@ -2,6 +2,10 @@
 disabled = false
 url = "sqlite://database/ferris.sqlite3"
 
+[rustification]
+# Wait after joining before granting Rustacean (seconds).
+delay_seconds = 1800
+
 [gateway]
 # All non-privileged intents are enabled automatically. Only add these after
 # enabling them in the Discord Developer Portal:

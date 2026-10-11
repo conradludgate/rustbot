@@ -51,7 +51,38 @@ fn discord_span(method: &'static str, server: &str) -> tracing::Span {
 		peer.service = "discord",
 		server.address = server,
 		discord.operation = method,
+		otel.status_code = tracing::field::Empty,
+		error.type = tracing::field::Empty,
+		discord.error.code = tracing::field::Empty,
 	)
+}
+
+/// Execute a Discord SDK operation and mark failures without exporting error payloads.
+#[allow(clippy::result_large_err)] // Preserve Serenity's typed errors for callers handling 404s.
+pub async fn discord_operation<T>(
+	method: &'static str,
+	request: impl std::future::Future<Output = Result<T, serenity::Error>>,
+) -> Result<T, serenity::Error> {
+	let span = discord_operation_span(method);
+	async {
+		let result = request.await;
+		if let Err(error) = &result {
+			span.record("otel.status_code", "ERROR");
+			let kind = match error {
+				serenity::Error::Http(serenity::HttpError::UnsuccessfulRequest(response)) => {
+					span.record("discord.error.code", response.error.code);
+					"discord.api"
+				}
+				serenity::Error::Http(_) => "discord.http",
+				serenity::Error::Json(_) => "discord.decode",
+				_ => "discord.sdk",
+			};
+			span.record("error.type", kind);
+		}
+		result
+	}
+	.instrument(span.clone())
+	.await
 }
 
 /// Discord attachment URLs can use either Discord's CDN or media host.

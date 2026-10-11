@@ -1,4 +1,5 @@
 mod highlight;
+mod rustification;
 mod server_icon;
 mod support;
 

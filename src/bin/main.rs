@@ -86,6 +86,8 @@ struct Config {
 	#[serde(default)]
 	gateway: GatewayConfig,
 	#[serde(default)]
+	rustification: ferrisbot_for_discord::rustification::RustificationConfig,
+	#[serde(default)]
 	telemetry: Option<TelemetryConfig>,
 	secrets: HashMap<String, String>,
 }
@@ -169,10 +171,14 @@ fn app(config: &Config) -> Result<(), AppError> {
 			privileged_intents = ?config.gateway.privileged_intents,
 			"configured privileged Discord gateway intents"
 		);
-		let mut client =
-			ferrisbot_for_discord::serenity(secret_store, pool, config.gateway.intents())
-				.await
-				.context(SerenityInitSnafu)?;
+		let mut client = ferrisbot_for_discord::serenity(
+			secret_store,
+			pool,
+			config.gateway.intents(),
+			config.rustification,
+		)
+		.await
+		.context(SerenityInitSnafu)?;
 
 		info!("starting serenity...");
 
@@ -386,6 +392,42 @@ fn check_for_config_files(main: &PathBuf, secrets: &PathBuf) {
 mod tests {
 	use super::{GatewayConfig, PrivilegedGatewayIntent, TelemetryConfig, build_tracer_provider};
 	use poise::serenity_prelude::GatewayIntents;
+
+	#[test]
+	fn rustification_config_defaults_to_thirty_minutes_and_accepts_override() {
+		let config: super::Config = figment::Figment::new()
+			.merge(figment::providers::Serialized::defaults(
+				&*super::DEFAULT_CONFIG,
+			))
+			.extract()
+			.unwrap();
+		assert_eq!(config.rustification.delay_seconds, 1800);
+		let config: super::Config = figment::Figment::new()
+			.merge(figment::providers::Serialized::defaults(
+				&*super::DEFAULT_CONFIG,
+			))
+			.merge(figment::providers::Serialized::defaults(
+				serde_json::json!({
+					"rustification": { "delay_seconds": 3 }
+				}),
+			))
+			.extract()
+			.unwrap();
+		assert_eq!(config.rustification.delay_seconds, 3);
+	}
+
+	#[test]
+	fn rustification_config_rejects_negative_and_overflowing_delays() {
+		for delay in [
+			serde_json::json!(-1),
+			serde_json::json!(u64::from(u32::MAX) + 1),
+		] {
+			let result = serde_json::from_value::<
+				ferrisbot_for_discord::rustification::RustificationConfig,
+			>(serde_json::json!({"delay_seconds": delay}));
+			assert!(result.is_err());
+		}
+	}
 
 	#[test]
 	fn gateway_intents_default_to_non_privileged() {

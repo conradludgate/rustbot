@@ -17,7 +17,8 @@ pub(super) struct TestDiscord {
 	pub(super) restricted_channel: String,
 	pub(super) modmail_channel: String,
 	modlog_channel: String,
-	user_id: String,
+	pub(super) user_id: String,
+	pub(super) rustacean_role_id: String,
 }
 
 impl TestDiscord {
@@ -72,6 +73,16 @@ impl TestDiscord {
 			.json()
 			.await?;
 
+		let role: User = client
+			.post(format!("{}/api/v10/guilds/{}/roles", base_url, guild.id))
+			.header("Authorization", format!("Bot {bot_token}"))
+			.json(&json!({ "name": "Rustacean" }))
+			.send()
+			.await?
+			.error_for_status()?
+			.json()
+			.await?;
+
 		Ok(Self {
 			client,
 			base_url,
@@ -91,6 +102,7 @@ impl TestDiscord {
 				.remove("bot-log")
 				.context("missing bot-log channel")?,
 			user_id: user.id,
+			rustacean_role_id: role.id,
 		})
 	}
 
@@ -102,7 +114,7 @@ impl TestDiscord {
 				("APPLICATION_ID", self.bot_id.clone()),
 				("MOD_ROLE_ID", "1".to_owned()),
 				("MOD_CONSULTANT_ROLE_ID", "2".to_owned()),
-				("RUSTACEAN_ROLE_ID", "3".to_owned()),
+				("RUSTACEAN_ROLE_ID", self.rustacean_role_id.clone()),
 				("MODMAIL_CHANNEL_ID", self.modmail_channel.clone()),
 				("MODLOG_CHANNEL_ID", self.modlog_channel.clone()),
 			]
@@ -145,6 +157,26 @@ impl TestDiscord {
 			.await?;
 
 		Ok(message.id)
+	}
+
+	pub(super) async fn member_roles(&self) -> Result<Vec<String>> {
+		#[derive(Deserialize)]
+		struct Member {
+			roles: Vec<String>,
+		}
+		let member: Member = self
+			.client
+			.get(format!(
+				"{}/api/v10/guilds/{}/members/{}",
+				self.base_url, self.guild_id, self.user_id
+			))
+			.header("Authorization", format!("Bot {}", self.bot_token))
+			.send()
+			.await?
+			.error_for_status()?
+			.json()
+			.await?;
+		Ok(member.roles)
 	}
 
 	pub(super) async fn deny_view_permission(&self, channel_id: &str) -> Result<()> {

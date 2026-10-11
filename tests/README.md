@@ -171,3 +171,41 @@ committing the fixtures and accepted replies.
 ```sh
 docker compose -f compose.local.yaml -p rustbot-tests down --volumes
 ```
+
+## Rustacean assignment tests
+
+`cargo test --lib rustification` runs deterministic tests against migrated SQLite
+and a local WireMock Discord API; it does not need Fauxcord or Discord credentials.
+Tests pass explicit worker timestamps instead of waiting 30 minutes. Coverage
+includes welcome-message scheduling, first-message repair with empty content,
+the 30-minute boundary, missing member payloads, departures/rejoins, screening,
+role and member-fetch failures, duplicate observations, and worker lifecycle.
+The restart case closes and reopens a file-backed database. The fast-path test
+closes SQLite before processing 100 messages from an existing Rustacean, proving
+those messages do not query the database. HTTP expectations verify individual
+member lookups and role additions without member-list calls.
+
+The command test bots enable Message Content, but do not request Guild Members.
+The three Rustacean integration cases in `tests/rustification/mod.rs` use no
+privileged intents and a three-second configured delay. They exercise the running
+production bot through Fauxcord's Gateway and role API: first-message scheduling
+and assignment, repair of a join missed while disconnected, and a persisted
+assignment completing after a Gateway restart without another message. They
+assert actual Discord roles and queue state, including no early assignment and
+no duplicate scheduling. `USER_JOIN` message handling remains covered by the
+SQLite/WireMock tests; Fauxcord's injection API only emits ordinary messages.
+
+Run the feature integration cases against the local Fauxcord stack with:
+
+```sh
+cargo test --test fauxcord_snapshots rustification -- --ignored --test-threads=3
+```
+
+Rustification tracing tests (`cargo test --lib rustification::telemetry_tests`)
+capture exported OTEL spans from production message and worker paths. They check
+workflow parentage, SQLite attributes, Discord client spans, retry/error status,
+and explicit assignment outcomes. Existing Rustaceans emit no workflow spans;
+message content, SQL bindings, and Discord response payloads are not exported.
+Scheduled batches begin independent traces rather than remaining attached to a
+startup or message span throughout the delay. Correlate scheduling and assignment
+using the guild/user IDs.

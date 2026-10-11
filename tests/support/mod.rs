@@ -35,6 +35,9 @@ pub struct TestBot {
 	bot_task: Option<JoinHandle<Result<(), serenity::Error>>>,
 	shard_manager: Arc<serenity::ShardManager>,
 
+	rustification_delay_seconds: u32,
+	intents: serenity::GatewayIntents,
+
 	// Keep the copied images available until the bot has stopped.
 	_icon_files: TempDir,
 }
@@ -46,6 +49,21 @@ pub struct CommandResponse {
 
 impl TestBot {
 	pub async fn start() -> Result<Self> {
+		Self::start_configured(
+			1800,
+			serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT,
+		)
+		.await
+	}
+
+	pub async fn start_with_rustification_delay(delay_seconds: u32) -> Result<Self> {
+		Self::start_configured(delay_seconds, serenity::GatewayIntents::non_privileged()).await
+	}
+
+	async fn start_configured(
+		delay_seconds: u32,
+		intents: serenity::GatewayIntents,
+	) -> Result<Self> {
 		highlight_checks::initialize();
 		let api = MockServer::start().await;
 		let discord = TestDiscord::register().await?;
@@ -55,12 +73,13 @@ impl TestBot {
 		let config = BotConfig {
 			secret_store: discord.secrets(),
 			database: Some(database.clone()),
-			intents: serenity::GatewayIntents::non_privileged()
-				| serenity::GatewayIntents::GUILD_MEMBERS
-				| serenity::GatewayIntents::MESSAGE_CONTENT,
+			intents,
 			discord_api_proxy: Some(discord.base_url.clone()),
 			external_apis: ExternalApiBases::new(api.uri(), api.uri()),
 			server_icon_directory: icon_files.path().to_owned(),
+			rustification: ferrisbot_for_discord::rustification::RustificationConfig {
+				delay_seconds,
+			},
 		};
 
 		let mut bot = build_bot(config).await?;
@@ -74,6 +93,8 @@ impl TestBot {
 			bot_task: Some(bot_task),
 			shard_manager,
 			_icon_files: icon_files,
+			rustification_delay_seconds: delay_seconds,
+			intents,
 		};
 
 		// Production setup posts the modmail prompt after registering commands.
@@ -83,6 +104,82 @@ impl TestBot {
 			.context("waiting for bot setup")?;
 
 		Ok(test)
+	}
+
+	pub async fn pause_gateway(&mut self) {
+		let _ =
+			tokio::time::timeout(Duration::from_secs(5), self.shard_manager.shutdown_all()).await;
+		if let Some(task) = self.bot_task.take() {
+			task.abort();
+			let _ = task.await;
+		}
+	}
+
+	pub async fn resume_gateway(&mut self) -> Result<()> {
+		let config = BotConfig {
+			secret_store: self.discord.secrets(),
+			database: Some(self.database.clone()),
+			intents: self.intents,
+			discord_api_proxy: Some(self.discord.base_url.clone()),
+			external_apis: ExternalApiBases::new(self.api.uri(), self.api.uri()),
+			server_icon_directory: self._icon_files.path().to_owned(),
+			rustification: ferrisbot_for_discord::rustification::RustificationConfig {
+				delay_seconds: self.rustification_delay_seconds,
+			},
+		};
+		let mut bot = build_bot(config).await?;
+		let cache = bot.cache.clone();
+		self.shard_manager = bot.shard_manager.clone();
+		self.bot_task = Some(tokio::spawn(async move { bot.start().await }));
+		// Ready has reached Serenity; Poise waits for its setup before dispatching messages.
+		tokio::time::timeout(REPLY_TIMEOUT, async {
+			while cache.current_user().id.get().to_string() != self.discord.bot_id {
+				tokio::time::sleep(POLL_INTERVAL).await;
+			}
+		})
+		.await
+		.context("waiting for restarted Gateway Ready")?;
+		Ok(())
+	}
+
+	/// Creates the test user's membership while the bot is disconnected.
+	pub async fn post_while_offline(&self) -> Result<()> {
+		self.discord
+			.inject_message("joined while Ferris was offline")
+			.await?;
+		Ok(())
+	}
+
+	pub async fn has_rustacean_role(&self) -> Result<bool> {
+		Ok(self
+			.discord
+			.member_roles()
+			.await?
+			.contains(&self.discord.rustacean_role_id))
+	}
+
+	pub async fn wait_for_rustacean_role(&self) -> Result<()> {
+		tokio::time::timeout(REPLY_TIMEOUT, async {
+			loop {
+				if self.has_rustacean_role().await? && self.rustification_queue().await?.is_empty()
+				{
+					return Ok::<_, anyhow::Error>(());
+				}
+				tokio::time::sleep(POLL_INTERVAL).await;
+			}
+		})
+		.await
+		.context("waiting for Rustacean assignment and queue removal")?
+	}
+
+	pub async fn rustification_queue(&self) -> Result<Vec<(Option<i64>, i64)>> {
+		Ok(sqlx::query_as(
+			"SELECT joined_at, next_attempt_at FROM rustification_queue WHERE guild_id = ? AND user_id = ?",
+		)
+		.bind(&self.discord.guild_id)
+		.bind(&self.discord.user_id)
+		.fetch_all(&self.database)
+		.await?)
 	}
 
 	/// Each bot has a cold cache and must fetch both metadata lists.
@@ -245,14 +342,7 @@ impl TestBot {
 	}
 
 	async fn stop_bot(&mut self) {
-		// Bound Gateway shutdown so a stuck connection cannot prevent cancellation.
-		let _ =
-			tokio::time::timeout(Duration::from_secs(5), self.shard_manager.shutdown_all()).await;
-
-		if let Some(task) = self.bot_task.take() {
-			task.abort();
-			let _ = task.await;
-		}
+		self.pause_gateway().await;
 
 		self.database.close().await;
 	}

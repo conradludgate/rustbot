@@ -3,7 +3,7 @@ disabled = false
 url = "sqlite://database/ferris.sqlite3"
 
 [gateway]
-privileged_intents = ["guild_members", "message_content"]
+privileged_intents = ["message_content"]
 
 [log]
 filter = "info,serenity=warn"
