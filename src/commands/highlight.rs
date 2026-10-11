@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use tracing::Instrument as _;
 
 use crate::{
+	helpers::discord_operation_span,
 	require_database,
 	types::{Context, Data},
 };
@@ -255,12 +256,14 @@ pub async fn check_message(
 	new_message: &serenity::Message,
 	span: tracing::Span,
 ) {
-	let highlights = data.highlights.read().await;
-	let regex_span = tracing::info_span!(
-		"discord.regex.highlight_check",
-		regex.count = highlights.len()
-	);
-	let matches = regex_span.in_scope(|| highlights.find(&new_message.content));
+	let matches = {
+		let highlights = data.highlights.read().await;
+		let regex_span = tracing::info_span!(
+			"discord.regex.highlight_check",
+			regex.count = highlights.len()
+		);
+		regex_span.in_scope(|| highlights.find(&new_message.content))
+	};
 	if !matches.is_empty() {
 		span.record("highlight.matched", true);
 		let trigger_span = tracing::info_span!(
@@ -302,21 +305,31 @@ async fn notify_match(
 	matcher: String,
 	message_link: &str,
 ) {
-	if let Ok(member) = gid.member(ctx, person_id).await
-		&& let Ok(p) = gid.to_partial_guild(ctx).await
-		&& let Ok(Some(channel)) =
-			if let Ok(Some(channel)) = p.channels(ctx).await.map(|x| x.get(&channel_id).cloned()) {
-				Ok(Some(channel))
-			} else {
-				p.get_active_threads(ctx)
-					.await
-					.map(|x| x.threads.iter().find(|th| th.id == channel_id).cloned())
-			} && let perms = p.user_permissions_in(&channel, &member)
+	if let Ok(member) = gid
+		.member(ctx, person_id)
+		.instrument(discord_operation_span("guild.member"))
+		.await && let Ok(p) = gid
+		.to_partial_guild(ctx)
+		.instrument(discord_operation_span("guild.to_partial_guild"))
+		.await && let Ok(Some(channel)) = if let Ok(Some(channel)) = p
+		.channels(ctx)
+		.instrument(discord_operation_span("guild.channels"))
+		.await
+		.map(|x| x.get(&channel_id).cloned())
+	{
+		Ok(Some(channel))
+	} else {
+		p.get_active_threads(ctx)
+			.instrument(discord_operation_span("guild.get_active_threads"))
+			.await
+			.map(|x| x.threads.iter().find(|th| th.id == channel_id).cloned())
+	} && let perms = p.user_permissions_in(&channel, &member)
 		&& perms.contains(Permissions::VIEW_CHANNEL)
 		&& (channel.kind != ChannelType::PrivateThread
 			|| channel
 				.id
 				.get_thread_member(ctx, member.user.id, true)
+				.instrument(discord_operation_span("channel.get_thread_member"))
 				.await
 				.ok()
 				.map(|x| x.user_id)
@@ -329,6 +342,7 @@ async fn notify_match(
 					"your match `{matcher}` was satisfied on message {message_link}",
 				)),
 			)
+			.instrument(discord_operation_span("user.direct_message"))
 			.await;
 	}
 }

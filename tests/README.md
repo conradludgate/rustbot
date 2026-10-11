@@ -127,7 +127,9 @@ are inline `insta` snapshots alongside each command.
 The highlight cases exercise invalid-pattern rejection, removal from the live
 regex cache, and the message event path. They check that nonmatching messages
 do not send a DM, matching messages do, hidden-channel messages do not notify,
-and removing a pattern stops future notifications. Run only these cases with:
+and removing a pattern stops future notifications. Message injection waits for
+the production highlight-check span to close for that exact bot and message,
+including awaited Discord requests, before inspecting DMs. Run only these cases with:
 
 ```sh
 cargo test --locked --test fauxcord_snapshots highlight:: -- --ignored

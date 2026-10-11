@@ -1,6 +1,7 @@
 //! Each case owns a bot, a Discord guild, SQLite, and its upstream HTTP mocks.
 
 mod fauxcord;
+mod highlight_checks;
 
 use std::{
 	fs,
@@ -45,6 +46,7 @@ pub struct CommandResponse {
 
 impl TestBot {
 	pub async fn start() -> Result<Self> {
+		highlight_checks::initialize();
 		let api = MockServer::start().await;
 		let discord = TestDiscord::register().await?;
 		let icon_files = prepare_icon_files()?;
@@ -117,9 +119,11 @@ impl TestBot {
 			.with_context(|| format!("command: {command}"))
 	}
 
-	/// Inject a non-command message authored by this test's user.
+	/// Inject a non-command message and wait for this bot to finish its highlight check.
 	pub async fn inject_message(&self, content: &str) -> Result<()> {
-		self.discord.inject_message(content).await
+		let checks = highlight_checks::subscribe();
+		let message_id = self.discord.inject_message(content).await?;
+		highlight_checks::wait(checks, &self.discord.bot_id, &message_id).await
 	}
 
 	/// Deny the highlight owner visibility of the test's restricted channel.
@@ -129,11 +133,14 @@ impl TestBot {
 			.await
 	}
 
-	/// Inject a non-command message into the restricted channel.
+	/// Inject a restricted-channel message and wait for its highlight check to finish.
 	pub async fn inject_restricted_message(&self, content: &str) -> Result<()> {
-		self.discord
+		let checks = highlight_checks::subscribe();
+		let message_id = self
+			.discord
 			.inject_message_in(&self.discord.restricted_channel, content)
-			.await
+			.await?;
+		highlight_checks::wait(checks, &self.discord.bot_id, &message_id).await
 	}
 
 	/// Wait for a DM sent by the bot to this test's user.

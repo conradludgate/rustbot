@@ -11,7 +11,7 @@ pub(super) struct TestDiscord {
 	client: reqwest::Client,
 	pub(super) base_url: String,
 	bot_token: String,
-	bot_id: String,
+	pub(super) bot_id: String,
 	pub(super) guild_id: String,
 	pub(super) command_channel: String,
 	pub(super) restricted_channel: String,
@@ -115,15 +115,21 @@ impl TestDiscord {
 	pub(super) async fn inject_command(&self, command: &str) -> Result<()> {
 		// Fauxcord broadcasts across guilds; a mention targets only this test's bot.
 		self.inject_message(&format!("<@{}> {command}", self.bot_id))
-			.await
+			.await?;
+		Ok(())
 	}
 
-	pub(super) async fn inject_message(&self, content: &str) -> Result<()> {
+	pub(super) async fn inject_message(&self, content: &str) -> Result<String> {
 		self.inject_message_in(&self.command_channel, content).await
 	}
 
-	pub(super) async fn inject_message_in(&self, channel_id: &str, content: &str) -> Result<()> {
-		self.client
+	pub(super) async fn inject_message_in(
+		&self,
+		channel_id: &str,
+		content: &str,
+	) -> Result<String> {
+		let message: User = self
+			.client
 			.post(format!(
 				"{}/_test/channels/{channel_id}/messages",
 				self.base_url
@@ -134,9 +140,11 @@ impl TestDiscord {
 			}))
 			.send()
 			.await?
-			.error_for_status()?;
+			.error_for_status()?
+			.json()
+			.await?;
 
-		Ok(())
+		Ok(message.id)
 	}
 
 	pub(super) async fn deny_view_permission(&self, channel_id: &str) -> Result<()> {

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use anyhow::{Result, ensure};
 
 use crate::support::TestBot;
@@ -14,7 +12,6 @@ async fn matching_messages_dm_the_highlight_owner() -> Result<()> {
 		ensure!(reply == "hl added!", "unexpected add reply: {reply:?}");
 
 		bot.inject_message("this message does not match").await?;
-		tokio::time::sleep(Duration::from_millis(250)).await;
 		let messages = bot.dm_messages().await?;
 		ensure!(messages.is_empty(), "unexpected DMs: {messages:#?}");
 
@@ -49,7 +46,6 @@ async fn hidden_channel_messages_do_not_trigger_highlights() -> Result<()> {
 
 		bot.restrict_channel_visibility().await?;
 		bot.inject_restricted_message("zebra").await?;
-		tokio::time::sleep(Duration::from_millis(250)).await;
 
 		let messages = bot.dm_messages().await?;
 		ensure!(messages.is_empty(), "unexpected DMs: {messages:#?}");
@@ -77,7 +73,6 @@ async fn removing_a_highlight_stops_future_notifications() -> Result<()> {
 		ensure!(reply == "hl removed!", "unexpected remove reply: {reply:?}");
 
 		bot.inject_message("zebra").await?;
-		tokio::time::sleep(Duration::from_millis(250)).await;
 		let messages = bot.dm_messages().await?;
 		ensure!(messages.is_empty(), "unexpected DMs: {messages:#?}");
 
@@ -109,7 +104,6 @@ async fn invalid_regex_is_rejected_without_adding_a_highlight() -> Result<()> {
 		);
 
 		bot.inject_message("zebra").await?;
-		tokio::time::sleep(Duration::from_millis(250)).await;
 		let messages = bot.dm_messages().await?;
 		ensure!(messages.is_empty(), "unexpected DMs: {messages:#?}");
 
