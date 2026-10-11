@@ -55,7 +55,7 @@ syn = { version = "2.0.104", default-features = false, features = [
   "parsing",
   "printing",
 ] }
-tokio = { version = "1.47", features = ["rt-multi-thread"] }
+tokio = { version = "1.47", features = ["rt-multi-thread", "signal"] }
 tracing = "0.1.41"
 tracing-appender = "0.2.4"
 tracing-log = "0.2.0"

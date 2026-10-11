@@ -22,6 +22,8 @@ use tracing_appender::rolling::{self, RollingFileAppender, Rotation};
 use tracing_log::AsLog as _;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt as _};
 
+mod shutdown;
+
 #[derive(Deserialize, Debug)]
 struct LogConfig {
 	filter: String,
@@ -123,6 +125,8 @@ enum LogRotation {
 fn app(config: &Config) -> Result<(), AppError> {
 	let rt = Runtime::new().context(TokioRuntimeSnafu)?;
 	rt.block_on(async {
+		// Install handlers before initialization so an early signal is retained.
+		let signal = shutdown::signal().context(ShutdownSignalSnafu)?;
 		let pool = if config.database.disabled {
 			warn!("database disabled via config (database.disabled = true)");
 			None
@@ -172,7 +176,14 @@ fn app(config: &Config) -> Result<(), AppError> {
 
 		info!("starting serenity...");
 
-		client.0.start_autosharded().await.context(SerenitySnafu)?;
+		let manager = client.0.shard_manager.clone();
+		shutdown::run_until_shutdown(
+			client.0.start_autosharded(),
+			signal,
+			manager.shutdown_all(),
+			std::time::Duration::from_secs(20),
+		)
+		.await?;
 
 		info!("serenity stopped");
 
@@ -327,10 +338,10 @@ fn main() {
 		}
 	}
 
-	if let Some(provider) = tracer_provider
-		&& let Err(err) = provider.shutdown()
-	{
-		warn!(error = %err, "OpenTelemetry tracer shutdown failed");
+	// The application runtime has stopped, so no Gateway tasks can add more spans.
+	// Keep the logging guards alive while the blocking exporter drains its batches.
+	if let Some(provider) = tracer_provider {
+		shutdown::flush_telemetry(provider);
 	}
 }
 
@@ -435,6 +446,10 @@ enum AppError {
 		#[snafu(source(from(poise::serenity_prelude::Error, Box::new)))]
 		source: Box<poise::serenity_prelude::Error>,
 	},
+	#[snafu(display("failed to listen for shutdown signals"))]
+	ShutdownSignal { source: std::io::Error },
+	#[snafu(display("Discord Gateway shutdown exceeded its grace period"))]
+	ShutdownTimeout { source: tokio::time::error::Elapsed },
 	#[snafu(display("failed to build OTLP span exporter"))]
 	Otlp {
 		source: opentelemetry_otlp::ExporterBuildError,
