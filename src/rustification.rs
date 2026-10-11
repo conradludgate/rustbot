@@ -495,7 +495,7 @@ mod tests {
 			.process_due(&http(&server), JOINED + DELAY)
 			.await
 			.unwrap();
-		assert!(queue(&service).await.is_empty());
+		assert_eq!(queue(&service).await, []);
 		// All HTTP mocks assert exactly one GET and one role PUT.
 		server.verify().await;
 	}
@@ -529,7 +529,7 @@ mod tests {
 			.process_due(&http(&server), JOINED + DELAY + 1)
 			.await
 			.unwrap();
-		assert!(queue(&service).await.is_empty());
+		assert_eq!(queue(&service).await, []);
 		server.verify().await;
 	}
 
@@ -605,7 +605,7 @@ mod tests {
 			.process_due(&http(&server), JOINED + DELAY + 500)
 			.await
 			.unwrap();
-		assert!(queue(&restored).await.is_empty());
+		assert_eq!(queue(&restored).await, []);
 		server.verify().await;
 	}
 
@@ -636,7 +636,7 @@ mod tests {
 			.process_due(&http(&server), rejoined + DELAY)
 			.await
 			.unwrap();
-		assert!(queue(&service).await.is_empty());
+		assert_eq!(queue(&service).await, []);
 		server.verify().await;
 	}
 
@@ -688,7 +688,7 @@ mod tests {
 			.process_due(&http(&server), JOINED + DELAY)
 			.await
 			.unwrap();
-		assert!(queue(&service).await.is_empty());
+		assert_eq!(queue(&service).await, []);
 		server.verify().await;
 	}
 
@@ -705,7 +705,7 @@ mod tests {
 			.process_due(&http(&server), JOINED + DELAY)
 			.await
 			.unwrap();
-		assert!(queue(&service).await.is_empty());
+		assert_eq!(queue(&service).await, []);
 		assert_eq!(server.received_requests().await.unwrap().len(), 1);
 		server.verify().await;
 	}
@@ -776,7 +776,7 @@ mod tests {
 		mock_member(&server, member(Some(JOINED), false, false), 1).await;
 		mock_role(&server, 204, 1).await;
 		service.process_due(&client, due + RETRY).await.unwrap();
-		assert!(queue(&service).await.is_empty());
+		assert_eq!(queue(&service).await, []);
 		server.verify().await;
 	}
 
@@ -872,7 +872,7 @@ mod tests {
 			mock_member(&server, member(Some(JOINED), false, false), 1).await;
 			mock_role(&server, 204, 1).await;
 			service.process_due(&client, JOINED + delay).await.unwrap();
-			assert!(queue(&service).await.is_empty());
+			assert_eq!(queue(&service).await, []);
 			server.verify().await;
 		}
 	}
