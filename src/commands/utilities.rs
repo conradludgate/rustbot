@@ -6,12 +6,14 @@ use poise::{
 		self as serenity, ChannelType, Color, CreateEmbed, CreateEmbedFooter, EditThread, Timestamp,
 	},
 };
+use poise::{parse_invocation, run_invocation};
 use rand::Rng;
 use std::iter;
 use std::sync::LazyLock;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tracing::Instrument as _;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::types::Context;
 
@@ -673,5 +675,98 @@ pub async fn user(
 	ctx.send(reply)
 		.instrument(crate::helpers::discord_operation_span("send"))
 		.await?;
+	Ok(())
+}
+
+/// Run a message as a prefix command. To use, right-click the message that
+/// you want to run, then go to "Apps" > "Run ?command".
+#[poise::command(context_menu_command = "Run ?command", category = "Utilities")]
+#[tracing::instrument(
+	name = "discord.command.run_prefix_command",
+	skip_all,
+	fields(
+		command = %ctx.command().qualified_name,
+		author.id = ctx.author().id.get(),
+		channel.id = ctx.channel_id().get(),
+		guild.id = ctx.guild_id().map(poise::serenity_prelude::GuildId::get),
+	),
+	err(Debug),
+)]
+pub async fn run_prefix_command(
+	ctx: Context<'_>,
+	#[description = "Message to run"] message: serenity::Message,
+) -> Result<(), Error> {
+	// This command shouldn't exist, but Discord decided we can't read
+	// every message ever.
+
+	// Prevent a user from triggering another user's message.
+	// Not checking for this would allow running old messages from any user.
+	if ctx.author().id != message.author.id {
+		ctx.send(
+			poise::CreateReply::default()
+				.content("cannot run command from another user")
+				.ephemeral(true),
+		)
+		.await?;
+
+		return Ok(());
+	}
+
+	let data = Mutex::new(Box::new(()) as _);
+	let mut parents = Vec::new();
+
+	// We trigger the framework error handler directly so it can do
+	// error specific responses for the user.
+	match parse_invocation(
+		ctx.framework(),
+		ctx.serenity_context(),
+		&message,
+		poise::MessageDispatchTrigger::MessageCreate,
+		&data,
+		&mut parents,
+	)
+	.await
+	{
+		Ok(Some(command)) => {
+			// Satisfy Discord's need for us to send a reply to the user.
+			// We just happened to accidentally delete it immediately after.
+			// This won't jump the channel for others as the reply is ephemeral.
+			match ctx
+				.send(
+					poise::CreateReply::default()
+						.content("triggered prefix command")
+						.ephemeral(true),
+				)
+				.await
+			{
+				Ok(handle) => {
+					if let Err(error) = handle.delete(ctx).await {
+						warn!(%error, "deleting reply failed");
+					}
+				}
+				Err(error) => {
+					warn!(%error, "reply failed");
+				}
+			}
+
+			// Chain into the prefix command using poise's normal handling.
+			if let Err(err) = run_invocation(command).await {
+				(ctx.framework().options().on_error)(err).await;
+			}
+		}
+		Ok(None) => {
+			ctx.send(
+				poise::CreateReply::default()
+					.content("expected the message to be a prefix command")
+					.ephemeral(true),
+			)
+			.await?;
+		}
+		Err(err) => {
+			(ctx.framework().options().on_error)(err).await;
+			return Ok(());
+		}
+	}
+
 	Ok(())
 }

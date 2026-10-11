@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs, panic, path::PathBuf, str::FromStr, sync::LazyLock};
 
-use ferrisbot_for_discord::SecretStore;
+use ferrisbot_for_discord::{SecretStore, ShuttleSerenity};
 use figment::{
 	Figment,
 	providers::{Env, Format as _, Serialized, Toml},
@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::json;
 use snafu::{Report, ResultExt as _, Snafu};
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
-use tokio::runtime::Runtime;
+use tokio::{runtime::Runtime, signal};
 use tracing::{debug, error, info, level_filters::LevelFilter, warn};
 use tracing_appender::rolling::{self, RollingFileAppender, Rotation};
 use tracing_log::AsLog as _;
@@ -168,6 +168,8 @@ fn app(config: &Config) -> Result<(), AppError> {
 				.context(SerenityInitSnafu)?;
 
 		info!("starting serenity...");
+
+		listen_for_shutdown_request(&client);
 
 		client.0.start_autosharded().await.context(SerenitySnafu)?;
 
@@ -366,6 +368,35 @@ fn check_for_config_files(main: &PathBuf, secrets: &PathBuf) {
 	if !fs::exists(secrets).is_ok_and(|x| x) {
 		warn!(file = %secrets.display(), "secrets config file missing");
 	}
+}
+
+fn listen_for_shutdown_request(client: &ShuttleSerenity) {
+	let manager = client.0.shard_manager.clone();
+	tokio::spawn(async move {
+		let ctrl_c = async {
+			signal::ctrl_c()
+				.await
+				.expect("Failed to install Ctrl+C handler");
+		};
+
+		#[cfg(unix)]
+		let terminate = async {
+			signal::unix::signal(signal::unix::SignalKind::terminate())
+				.expect("Failed to install SIGTERM handler")
+				.recv()
+				.await;
+		};
+
+		#[cfg(not(unix))]
+		let terminate = std::future::pending::<()>();
+
+		tokio::select! {
+			_ = ctrl_c => info!("received ctrl+c"),
+			_ = terminate => println!("received SIGTERM"),
+		}
+
+		manager.shutdown_all().await
+	});
 }
 
 #[cfg(test)]
