@@ -36,7 +36,7 @@ pub async fn procmacro(
 	usage_code: poise::CodeBlock,
 ) -> Result<(), Error> {
 	ctx.say(stub_message(ctx))
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	let macro_code = macro_code.code;
@@ -100,6 +100,10 @@ fn main() -> std::io::Result<()> {
 			mode: Mode::Debug,
 			tests: false,
 		})
+		.with_extension(crate::telemetry::ExternalOperation::new(
+			"rust-playground.execute",
+			"rust-playground",
+		))
 		.send()
 		.await?
 		.json()

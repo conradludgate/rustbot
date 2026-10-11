@@ -23,7 +23,7 @@ macro_rules! require_database {
 				{
 					use tracing::Instrument as _;
 					$ctx.say($crate::helpers::DATABASE_DISABLED_MSG)
-						.instrument($crate::helpers::discord_operation_span("say"))
+						.instrument($crate::helpers::discord_operation_span("reply.send"))
 				}
 				.await?;
 				return Ok(());
@@ -38,14 +38,32 @@ pub use require_database;
 /// Trace a Discord SDK operation as an outgoing call without payloads or request tokens.
 /// An SDK operation can use the cache or issue multiple HTTP requests, so do not invent
 /// HTTP methods, URLs, or status codes here. Keep operation names static and low cardinality.
+#[must_use]
 pub fn discord_operation_span(method: &'static str) -> tracing::Span {
+	discord_span(method, "discord.com")
+}
+
+fn discord_span(method: &'static str, server: &str) -> tracing::Span {
 	info_span!(
 		"discord.api",
 		otel.name = format!("discord.{method}"),
 		otel.kind = "client",
 		peer.service = "discord",
-		server.address = "discord.com",
+		server.address = server,
 		discord.operation = method,
+	)
+}
+
+/// Discord attachment URLs can use either Discord's CDN or media host.
+/// Record only the host; attachment paths and signed query parameters stay private.
+#[must_use]
+pub fn discord_attachment_span(url: &str) -> tracing::Span {
+	let url = reqwest::Url::parse(url).ok();
+	discord_span(
+		"attachment.download",
+		url.as_ref()
+			.and_then(reqwest::Url::host_str)
+			.unwrap_or("discord.com"),
 	)
 }
 
@@ -72,7 +90,7 @@ pub async fn acknowledge_fail(error: poise::FrameworkError<'_, Data, Error>) {
 			Context::Application(_) => {
 				if let Err(e) = ctx
 					.say(format!("❌ {error}"))
-					.instrument(crate::helpers::discord_operation_span("say"))
+					.instrument(crate::helpers::discord_operation_span("reply.send"))
 					.await
 				{
 					warn!(
@@ -85,6 +103,9 @@ pub async fn acknowledge_fail(error: poise::FrameworkError<'_, Data, Error>) {
 				if let Err(e) = prefix_context
 					.msg
 					.react(ctx, serenity::ReactionType::from('❌'))
+					.instrument(crate::helpers::discord_operation_span(
+						"message.add_reaction",
+					))
 					.await
 				{
 					warn!("Failed to react with red cross: {}", e);
@@ -131,7 +152,13 @@ pub async fn acknowledge_success(
 				serenity::ReactionType::from,
 			);
 
-			prefix_context.msg.react(&ctx, reaction).await?;
+			prefix_context
+				.msg
+				.react(&ctx, reaction)
+				.instrument(crate::helpers::discord_operation_span(
+					"message.add_reaction",
+				))
+				.await?;
 		}
 		Context::Application(_) => {
 			let msg_content = match emoji {
@@ -140,13 +167,19 @@ pub async fn acknowledge_success(
 			};
 			if let Ok(reply) = ctx
 				.say(msg_content)
-				.instrument(crate::helpers::discord_operation_span("say"))
+				.instrument(crate::helpers::discord_operation_span("reply.send"))
 				.await
 			{
 				tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-				let msg = reply.message().await?;
+				let msg = reply
+					.message()
+					.instrument(crate::helpers::discord_operation_span("reply.fetch"))
+					.await?;
 				// ignore errors as to not fail if ephemeral
-				let _: Result<_, _> = msg.delete(&ctx).await;
+				let _: Result<_, _> = msg
+					.delete(&ctx)
+					.instrument(crate::helpers::discord_operation_span("message.delete"))
+					.await;
 			}
 		}
 	}
@@ -201,7 +234,7 @@ pub async fn reply_potentially_long_text(
 	truncation_msg_future: impl std::future::Future<Output = String>,
 ) -> Result<(), Error> {
 	ctx.say(trim_text(text_body, text_end, truncation_msg_future).await)
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 	Ok(())
 }
@@ -216,7 +249,7 @@ pub async fn send_audit_log(
 	let modlog_channel_id = ctx.data().modlog_channel_id;
 
 	let channel = modlog_channel_id
-		.to_channel(&ctx)
+		.to_channel(&ctx).instrument(crate::helpers::discord_operation_span("channel.get"))
 		.await
 		.context("Modlog channel not found. Please create a channel and set the MODLOG_CHANNEL_ID environment variable to its ID.")?;
 
@@ -235,6 +268,9 @@ pub async fn send_audit_log(
 
 	modlog_channel_id
 		.say(&ctx, log_message)
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.send_message",
+		))
 		.await
 		.context("Failed to send audit log message")?;
 
@@ -260,7 +296,7 @@ pub async fn paginate(ctx: Context<'_>, pages: &[String]) -> Result<(), Error> {
 	};
 
 	ctx.send(reply)
-		.instrument(crate::helpers::discord_operation_span("send"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	// Loop through incoming interactions with the navigation buttons
@@ -296,7 +332,7 @@ pub async fn paginate(ctx: Context<'_>, pages: &[String]) -> Result<(), Error> {
 				),
 			)
 			.instrument(crate::helpers::discord_operation_span(
-				"component.create_response",
+				"interaction.create_response",
 			))
 			.await?;
 	}

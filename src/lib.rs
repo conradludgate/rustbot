@@ -9,6 +9,7 @@
 )]
 
 use std::collections::HashMap;
+use std::future::IntoFuture as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,7 +33,9 @@ code here
 ```";
 pub mod checks;
 pub mod commands;
+pub mod discord;
 pub mod helpers;
+pub mod telemetry;
 pub mod types;
 
 pub struct SecretStore(pub HashMap<String, String>);
@@ -91,6 +94,7 @@ pub struct BotConfig {
 	pub server_icon_directory: PathBuf,
 }
 
+#[tracing::instrument(name = "bot.build", skip_all, err(Debug))]
 pub async fn build_bot(config: BotConfig) -> Result<serenity::Client, Error> {
 	let BotConfig {
 		secret_store,
@@ -117,34 +121,40 @@ pub async fn build_bot(config: BotConfig) -> Result<serenity::Client, Error> {
 
 	let framework = poise::Framework::builder()
 		.setup(move |ctx, ready, framework| {
-			Box::pin(async move {
-				let data = Data::new(
-					&secret_store,
-					database,
-					external_apis,
-					server_icon_directory,
-				)
-				.await?;
+			Box::pin(
+				async move {
+					let data = Data::new(
+						&secret_store,
+						database,
+						external_apis,
+						server_icon_directory,
+					)
+					.await?;
 
-				info!(
-					"Registering {} commands...",
-					framework.options().commands.len()
-				);
-				poise::builtins::register_in_guild(
-					ctx,
-					&framework.options().commands,
-					data.discord_guild_id,
-				)
-				.await?;
+					info!(
+						"Registering {} commands...",
+						framework.options().commands.len()
+					);
+					poise::builtins::register_in_guild(
+						ctx,
+						&framework.options().commands,
+						data.discord_guild_id,
+					)
+					.instrument(crate::helpers::discord_operation_span("guild.set_commands"))
+					.await?;
 
-				debug!("Setting activity text");
-				ctx.set_activity(Some(serenity::ActivityData::listening("/help")));
+					debug!("Setting activity text");
+					crate::helpers::discord_operation_span("gateway.set_activity").in_scope(|| {
+						ctx.set_activity(Some(serenity::ActivityData::listening("/help")));
+					});
 
-				load_or_create_modmail_message(ctx, &data).await?;
+					load_or_create_modmail_message(ctx, &data).await?;
 
-				info!("ferrisbot-for-discord logged in as {}", ready.user.name);
-				Ok(data)
-			})
+					info!("ferrisbot-for-discord logged in as {}", ready.user.name);
+					Ok(data)
+				}
+				.instrument(tracing::info_span!("bot.setup")),
+			)
 		})
 		.options(poise::FrameworkOptions {
 			commands: command_list,
@@ -217,6 +227,8 @@ pub async fn build_bot(config: BotConfig) -> Result<serenity::Client, Error> {
 
 	let client = serenity::ClientBuilder::new_with_http(http.build(), intents)
 		.framework(framework)
+		.into_future()
+		.instrument(crate::helpers::discord_operation_span("client.initialize"))
 		.await
 		.map_err(|e| anyhow!(e))?;
 
@@ -278,7 +290,7 @@ async fn try_say(ctx: &poise::Context<'_, Data, Error>, message: impl Into<Strin
 	let msg = message.into();
 	if let Err(e) = ctx
 		.say(&msg)
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await
 	{
 		warn!(
@@ -316,6 +328,7 @@ async fn event_handler(
 						"Automatically rustified after {RUSTIFICATION_DELAY} minutes"
 					)),
 				)
+				.instrument(crate::helpers::discord_operation_span("member.add_role"))
 				.await;
 		}
 		serenity::FullEvent::Ready { .. } => {

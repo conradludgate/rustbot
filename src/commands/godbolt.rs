@@ -81,7 +81,7 @@ async fn compile_rust_source(
 ) -> Result<Compilation, Error> {
 	let tools = make_tools_json(request.run_llvm_mca);
 
-	let http_request = http
+	let http_response = http
 		.post(format!(
 			"{}/api/compiler/{}/compile",
 			request.api_base_url.trim_end_matches('/'),
@@ -96,9 +96,10 @@ async fn compile_rust_source(
                 // "libraries": [{"id": "itoa", "version": "102"}],
             },
         } })
-		.build()?;
+		.with_extension(crate::telemetry::ExternalOperation::new("godbolt.compile", "godbolt"))
+		.send().await?;
 
-	let response: GodboltResponse = http.execute(http_request).await?.json().await?;
+	let response: GodboltResponse = http_response.json().await?;
 
 	// TODO: use the extract_relevant_lines utility to strip stderr nicely
 	Ok(Compilation {
@@ -149,6 +150,10 @@ async fn save_to_shortlink(http: &ClientWithMiddleware, req: &GodboltRequest<'_>
 	let url = async move {
 		Ok::<_, crate::Error>(
 			request
+				.with_extension(crate::telemetry::ExternalOperation::new(
+					"godbolt.shortlink.create",
+					"godbolt",
+				))
 				.send()
 				.await?
 				.json::<GodboltShortenerResponse>()
@@ -232,7 +237,7 @@ async fn respond_codeblocks(
 				)
 				.await,
 			)
-			.instrument(crate::helpers::discord_operation_span("say"))
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
 			.await?;
 		}
 	}
@@ -259,7 +264,7 @@ async fn respond_codeblock(
 		)
 		.await,
 	)
-	.instrument(crate::helpers::discord_operation_span("say"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 	Ok(())
 }

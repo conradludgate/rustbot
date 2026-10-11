@@ -20,7 +20,7 @@ async fn play_or_eval(
 	result_handling: ResultHandling,
 ) -> Result<(), Error> {
 	ctx.say(stub_message(ctx))
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	let result_handling = match result_handling {
@@ -50,6 +50,10 @@ async fn play_or_eval(
 			mode: flags.mode,
 			tests: false,
 		})
+		.with_extension(crate::telemetry::ExternalOperation::new(
+			"rust-playground.execute",
+			"rust-playground",
+		))
 		.send()
 		.await?
 		.json()

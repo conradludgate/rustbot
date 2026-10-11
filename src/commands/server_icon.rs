@@ -99,12 +99,16 @@ impl ServerIconRotation {
 			return Ok(false);
 		}
 
-		sqlx::query("UPDATE server_icon_rotation SET paused_at = ? WHERE guild_id = ?")
-			.bind(now_seconds())
-			.bind(self.guild_id.get().to_string())
-			.execute(&self.pool)
-			.await
-			.context("Failed to pause server icon rotation")?;
+		crate::telemetry::sqlite_query(
+			"UPDATE",
+			"server_icon_rotation",
+			sqlx::query("UPDATE server_icon_rotation SET paused_at = ? WHERE guild_id = ?")
+				.bind(now_seconds())
+				.bind(self.guild_id.get().to_string())
+				.execute(&self.pool),
+		)
+		.await
+		.context("Failed to pause server icon rotation")?;
 		self.wake.notify_one();
 		Ok(true)
 	}
@@ -118,12 +122,16 @@ impl ServerIconRotation {
 		};
 
 		let next_rotation_at = resume_deadline(state.next_rotation_at, paused_at, now_seconds());
-		sqlx::query(
-			"UPDATE server_icon_rotation SET paused_at = NULL, next_rotation_at = ? WHERE guild_id = ?",
+		crate::telemetry::sqlite_query(
+			"UPDATE",
+			"server_icon_rotation",
+			sqlx::query(
+				"UPDATE server_icon_rotation SET paused_at = NULL, next_rotation_at = ? WHERE guild_id = ?",
+			)
+			.bind(next_rotation_at)
+			.bind(self.guild_id.get().to_string())
+			.execute(&self.pool),
 		)
-		.bind(next_rotation_at)
-		.bind(self.guild_id.get().to_string())
-		.execute(&self.pool)
 		.await
 		.context("Failed to resume server icon rotation")?;
 		self.wake.notify_one();
@@ -148,12 +156,16 @@ impl ServerIconRotation {
 
 		let _lock = self.operation_lock.lock().await;
 		let state = ensure_state(&self.pool, self.guild_id).await?;
-		sqlx::query("UPDATE server_icon_rotation SET pending_icon_path = ? WHERE guild_id = ?")
-			.bind(&choice.path)
-			.bind(self.guild_id.get().to_string())
-			.execute(&self.pool)
-			.await
-			.context("Failed to save the requested server icon")?;
+		crate::telemetry::sqlite_query(
+			"UPDATE",
+			"server_icon_rotation",
+			sqlx::query("UPDATE server_icon_rotation SET pending_icon_path = ? WHERE guild_id = ?")
+				.bind(&choice.path)
+				.bind(self.guild_id.get().to_string())
+				.execute(&self.pool),
+		)
+		.await
+		.context("Failed to save the requested server icon")?;
 
 		match apply_icon(ctx, self.guild_id, &choice.path, &self.icon_directory).await {
 			Ok(()) => {
@@ -284,12 +296,16 @@ async fn process_due_icon(
 	tracing::Span::current().record("icon.path", tracing::field::display(&path));
 
 	if state.pending_icon_path.is_none() {
-		sqlx::query("UPDATE server_icon_rotation SET pending_icon_path = ? WHERE guild_id = ?")
-			.bind(&path)
-			.bind(guild_id.get().to_string())
-			.execute(pool)
-			.await
-			.context("Failed to save the next server icon")?;
+		crate::telemetry::sqlite_query(
+			"UPDATE",
+			"server_icon_rotation",
+			sqlx::query("UPDATE server_icon_rotation SET pending_icon_path = ? WHERE guild_id = ?")
+				.bind(&path)
+				.bind(guild_id.get().to_string())
+				.execute(pool),
+		)
+		.await
+		.context("Failed to save the next server icon")?;
 	}
 
 	apply_icon(http, guild_id, &path, icon_directory).await?;
@@ -314,16 +330,20 @@ async fn complete_pending_icon(
 	} else {
 		Some(now_seconds().saturating_add(random_rotation_delay()))
 	};
-	sqlx::query(
-		"UPDATE server_icon_rotation
+	crate::telemetry::sqlite_query(
+		"UPDATE",
+		"server_icon_rotation",
+		sqlx::query(
+			"UPDATE server_icon_rotation
 		 SET current_icon_path = ?, pending_icon_path = NULL,
 	     next_rotation_at = COALESCE(?, next_rotation_at)
 		 WHERE guild_id = ?",
+		)
+		.bind(path)
+		.bind(next_rotation_at)
+		.bind(guild_id.get().to_string())
+		.execute(pool),
 	)
-	.bind(path)
-	.bind(next_rotation_at)
-	.bind(guild_id.get().to_string())
-	.execute(pool)
 	.await
 	.context("Failed to save the server icon rotation schedule")?;
 	info!(icon_path = path, "Server icon changed");
@@ -373,12 +393,16 @@ async fn ensure_state(
 	pool: &SqlitePool,
 	guild_id: serenity::GuildId,
 ) -> Result<RotationState, Error> {
-	sqlx::query(
-		"INSERT OR IGNORE INTO server_icon_rotation (guild_id, next_rotation_at) VALUES (?, ?)",
+	crate::telemetry::sqlite_query(
+		"INSERT",
+		"server_icon_rotation",
+		sqlx::query(
+			"INSERT OR IGNORE INTO server_icon_rotation (guild_id, next_rotation_at) VALUES (?, ?)",
+		)
+		.bind(guild_id.get().to_string())
+		.bind(now_seconds())
+		.execute(pool),
 	)
-	.bind(guild_id.get().to_string())
-	.bind(now_seconds())
-	.execute(pool)
 	.await
 	.context("Failed to initialize server icon rotation state")?;
 	load_state(pool, guild_id).await
@@ -394,12 +418,16 @@ async fn load_state(
 	pool: &SqlitePool,
 	guild_id: serenity::GuildId,
 ) -> Result<RotationState, Error> {
-	sqlx::query_as::<_, RotationState>(
-		"SELECT next_rotation_at, paused_at, pending_icon_path, current_icon_path
+	crate::telemetry::sqlite_query(
+		"SELECT",
+		"server_icon_rotation",
+		sqlx::query_as::<_, RotationState>(
+			"SELECT next_rotation_at, paused_at, pending_icon_path, current_icon_path
 		 FROM server_icon_rotation WHERE guild_id = ?",
+		)
+		.bind(guild_id.get().to_string())
+		.fetch_one(pool),
 	)
-	.bind(guild_id.get().to_string())
-	.fetch_one(pool)
 	.await
 	.context("Failed to read server icon rotation state")
 }
@@ -593,7 +621,9 @@ pub async fn server_icon_status(ctx: Context<'_>) -> Result<(), Error> {
 		embed = embed.image(url.clone());
 		reply = reply.content(format!("<{url}>"));
 	}
-	ctx.send(reply.embed(embed)).await?;
+	ctx.send(reply.embed(embed))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
+		.await?;
 	Ok(())
 }
 
@@ -612,7 +642,9 @@ pub async fn server_icon_status(ctx: Context<'_>) -> Result<(), Error> {
 pub async fn server_icon_list(ctx: Context<'_>) -> Result<(), Error> {
 	let choices = icon_choices(&ctx.data().server_icon_directory).await?;
 	if choices.is_empty() {
-		ctx.say("No server icons are available.").await?;
+		ctx.say("No server icons are available.")
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
+			.await?;
 		return Ok(());
 	}
 
@@ -621,13 +653,17 @@ pub async fn server_icon_list(ctx: Context<'_>) -> Result<(), Error> {
 		let image_link = format!("<{GITHUB_ICON_URL}{}?raw=true>", choice.filename);
 		let entry = format!("`{}` {image_link}\n", choice.suffix);
 		if page.len() + entry.len() > 1800 {
-			ctx.say(&page).await?;
+			ctx.say(&page)
+				.instrument(crate::helpers::discord_operation_span("reply.send"))
+				.await?;
 			page.clear();
 		}
 		page.push_str(&entry);
 	}
 	if !page.is_empty() {
-		ctx.say(page).await?;
+		ctx.say(page)
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
+			.await?;
 	}
 	Ok(())
 }
@@ -662,6 +698,7 @@ pub async fn server_icon_pause(ctx: Context<'_>) -> Result<(), Error> {
 			.content(message)
 			.ephemeral(true),
 	)
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 	Ok(())
 }
@@ -696,6 +733,7 @@ pub async fn server_icon_resume(ctx: Context<'_>) -> Result<(), Error> {
 			.content(message)
 			.ephemeral(true),
 	)
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 	Ok(())
 }
@@ -720,7 +758,11 @@ pub async fn server_icon_resume(ctx: Context<'_>) -> Result<(), Error> {
 	err(Debug),
 )]
 pub async fn server_icon_set(ctx: Context<'_>, suffix: String) -> Result<(), Error> {
-	ctx.defer_ephemeral().await?;
+	ctx.defer_ephemeral()
+		.instrument(crate::helpers::discord_operation_span(
+			"reply.defer_ephemeral",
+		))
+		.await?;
 	let choice = icon_service(ctx)?
 		.set_icon(ctx.serenity_context(), &suffix)
 		.await?;
@@ -730,6 +772,7 @@ pub async fn server_icon_set(ctx: Context<'_>, suffix: String) -> Result<(), Err
 			.content(message)
 			.ephemeral(true),
 	)
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 	Ok(())
 }

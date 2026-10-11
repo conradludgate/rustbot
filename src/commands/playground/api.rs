@@ -237,6 +237,10 @@ pub async fn post_gist(ctx: Context<'_>, code: &str) -> Result<String, Error> {
 		.post(ctx.data().external_apis.playground_url("meta/gist/"))
 		.header(header::REFERER, "https://discord.gg/rust-lang-community")
 		.json(&payload)
+		.with_extension(crate::telemetry::ExternalOperation::new(
+			"rust-playground.gist.create",
+			"rust-playground",
+		))
 		.send()
 		.await?;
 
@@ -279,6 +283,10 @@ pub async fn apply_online_rustfmt(
 		.http
 		.post(ctx.data().external_apis.playground_url("format"))
 		.json(&FormatRequest { code, edition })
+		.with_extension(crate::telemetry::ExternalOperation::new(
+			"rust-playground.format",
+			"rust-playground",
+		))
 		.send()
 		.await?
 		.json::<FormatResponse>()

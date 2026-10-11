@@ -305,7 +305,7 @@ pub async fn send_reply(
 	// so we special-case empty code blocks
 	if result.trim().is_empty() {
 		ctx.say(format!("{flag_parse_errors}``` ```"))
-			.instrument(crate::helpers::discord_operation_span("say"))
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
 			.await?;
 		return Ok(());
 	}
@@ -344,12 +344,14 @@ pub async fn send_reply(
 			}
 			b
 		})
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	// Only timeout replies have a Retry button; waiting otherwise keeps command spans open.
 	if timeout {
 		if let Some(retry_pressed) = response
 			.message()
+			.instrument(crate::helpers::discord_operation_span("reply.fetch"))
 			.await?
 			.await_component_interaction(ctx)
 			.filter(move |mci: &ComponentInteraction| mci.data.custom_id == custom_id)
@@ -358,7 +360,7 @@ pub async fn send_reply(
 		{
 			retry_pressed
 				.defer(&ctx)
-				.instrument(crate::helpers::discord_operation_span("component.defer"))
+				.instrument(crate::helpers::discord_operation_span("interaction.defer"))
 				.await?;
 			ctx.rerun().await?;
 		} else {
@@ -366,7 +368,7 @@ pub async fn send_reply(
 			// Errors are ignored in case the reply was deleted
 			let _ = response
 				.edit(ctx, poise::CreateReply::default())
-				.instrument(crate::helpers::discord_operation_span("response.edit"))
+				.instrument(crate::helpers::discord_operation_span("reply.edit"))
 				.await;
 		}
 	}

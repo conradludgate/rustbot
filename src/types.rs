@@ -103,7 +103,7 @@ impl Data {
 			modmail_message: Arc::default(),
 			bot_start_time: std::time::Instant::now(),
 			http: ClientBuilder::new(reqwest::Client::new())
-				.with(TracingMiddleware::default())
+				.with(TracingMiddleware::<crate::telemetry::ExternalHttpBackend>::new())
 				.build(),
 			external_apis,
 			godbolt_metadata: StdMutex::new(commands::godbolt::GodboltMetadata::default()),

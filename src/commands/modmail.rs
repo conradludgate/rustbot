@@ -13,7 +13,7 @@ async fn send_modmail_success(ctx: Context<'_>, modmail: &GuildChannel) -> Resul
 		"Successfully sent your message to the moderators. Check out your modmail thread here: {}",
 		modmail.mention()
 	))
-	.instrument(crate::helpers::discord_operation_span("say"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 	Ok(())
 }
@@ -124,6 +124,7 @@ pub async fn modmail(
 	Ok(())
 }
 
+#[tracing::instrument(name = "modmail.ensure_prompt", skip_all, err(Debug))]
 pub async fn load_or_create_modmail_message(
 	http: impl serenity::CacheHttp,
 	data: &Data,
@@ -138,6 +139,7 @@ pub async fn load_or_create_modmail_message(
 	let modmail_guild_channel = data
 		.modmail_channel_id
 		.to_channel(&http)
+		.instrument(crate::helpers::discord_operation_span("channel.get"))
 		.await
 		.context("Cannot enter modmail channel")?
 		.guild()
@@ -146,6 +148,9 @@ pub async fn load_or_create_modmail_message(
 	// Fetch the report message itself
 	let open_report_message = modmail_guild_channel
 		.messages(&http, serenity::GetMessages::new().limit(1))
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.list_messages",
+		))
 		.await?
 		.first()
 		.cloned();
@@ -174,7 +179,7 @@ The modmail will materialize itself as a private thread under this channel with 
 							.emoji(serenity::ReactionType::Unicode("📩".to_string()))
 							.style(serenity::ButtonStyle::Primary),
 					),
-			)
+			).instrument(crate::helpers::discord_operation_span("channel.send_message"))
 			.await?
 	};
 
@@ -191,6 +196,7 @@ async fn store_message(data: &Data, message: serenity::Message) {
 	rwguard.get_or_insert(message);
 }
 
+#[tracing::instrument(name = "modmail.create_thread", skip_all, err(Debug))]
 pub async fn create_modmail_thread(
 	http: impl serenity::CacheHttp,
 	user_message: impl Into<String>,
@@ -208,6 +214,7 @@ pub async fn create_modmail_thread(
 
 	let modmail_channel = modmail_message
 		.channel(&http)
+		.instrument(crate::helpers::discord_operation_span("channel.get"))
 		.await
 		.context("Failed to fetch modmail channel")?
 		.guild()
@@ -220,11 +227,17 @@ pub async fn create_modmail_thread(
 			&http,
 			serenity::CreateThread::new(modmail_name).kind(serenity::ChannelType::PrivateThread),
 		)
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.create_thread",
+		))
 		.await?;
 
 	// disallow users from inviting others to modmail threads
 	modmail_thread
 		.edit_thread(&http, EditThread::new().invitable(false))
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.edit_thread",
+		))
 		.await?;
 
 	let thread_message_content = format!(
@@ -246,6 +259,9 @@ pub async fn create_modmail_thread(
 						.roles([data.mod_role_id, data.mod_consultant_role_id]),
 				),
 		)
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.send_message",
+		))
 		.await?;
 
 	Ok(modmail_thread)

@@ -88,7 +88,15 @@ async fn update_godbolt_metadata(data: &Data) -> Result<(), Error> {
 			.http
 			.get(data.external_apis.godbolt_url("api/compilers/rust"))
 			.header(reqwest::header::ACCEPT, "application/json");
-		let mut targets: Vec<GodboltTarget> = request.send().await?.json().await?;
+		let mut targets: Vec<GodboltTarget> = request
+			.with_extension(crate::telemetry::ExternalOperation::new(
+				"godbolt.compilers.list",
+				"godbolt",
+			))
+			.send()
+			.await?
+			.json()
+			.await?;
 		// Clean up the data we've gotten from the request
 		for target in &mut targets {
 			target.clean_request_data();
@@ -101,7 +109,15 @@ async fn update_godbolt_metadata(data: &Data) -> Result<(), Error> {
 			.http
 			.get(data.external_apis.godbolt_url("api/libraries/rust"))
 			.header(reqwest::header::ACCEPT, "application/json");
-		let libraries: Vec<GodboltLibrary> = request.send().await?.json().await?;
+		let libraries: Vec<GodboltLibrary> = request
+			.with_extension(crate::telemetry::ExternalOperation::new(
+				"godbolt.libraries.list",
+				"godbolt",
+			))
+			.send()
+			.await?
+			.json()
+			.await?;
 
 		info!(
 			"updating godbolt metadata: {} targets, {} libraries",
@@ -247,7 +263,7 @@ pub async fn targets(ctx: Context<'_>) -> Result<(), Error> {
 				})),
 		),
 	)
-	.instrument(crate::helpers::discord_operation_span("send"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 
 	Ok(())

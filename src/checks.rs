@@ -27,7 +27,7 @@ pub async fn check_is_moderator(ctx: Context<'_>) -> anyhow::Result<bool> {
 				.content("This command is only available to moderators.")
 				.ephemeral(true),
 		)
-		.instrument(crate::helpers::discord_operation_span("send"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 	}
 

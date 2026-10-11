@@ -9,12 +9,9 @@ use tracing::Instrument as _;
 use anyhow::{Result, anyhow};
 use futures::StreamExt as _;
 use itertools::Itertools;
-use poise::{
-	ChoiceParameter, CreateReply, ReplyHandle, modal::execute_modal_on_component_interaction,
-	serenity_prelude::*,
-};
+use poise::{ChoiceParameter, CreateReply, ReplyHandle, serenity_prelude::*};
 
-use crate::types::Context;
+use crate::{discord::execute_modal_on_component_interaction, types::Context};
 
 const MESSAGE_LIMIT: u8 = 100;
 const MAX_TIME_SPAN: Duration = Duration::from_hours(2);
@@ -306,6 +303,9 @@ impl MoveOptions {
 							.kind(ChannelType::PublicThread)
 							.audit_log_reason("moved conversation"),
 					)
+					.instrument(crate::helpers::discord_operation_span(
+						"channel.create_thread",
+					))
 					.await?;
 
 				Ok(MoveDestination::Thread {
@@ -327,6 +327,9 @@ impl MoveOptions {
 							CreateMessage::new().content("Moved conversation"),
 						),
 					)
+					.instrument(crate::helpers::discord_operation_span(
+						"channel.create_forum_post",
+					))
 					.await?;
 
 				Ok(MoveDestination::Thread {
@@ -398,6 +401,7 @@ impl MoveOptionsDialog {
 					.components(components.collect())
 					.ephemeral(true),
 			)
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
 			.await?;
 
 		Ok(CreatedMoveOptionsDialog { handle, dialog })
@@ -438,7 +442,7 @@ impl MoveOptionsDialog {
 		if component.can_defer() {
 			interaction
 				.defer(&ctx)
-				.instrument(crate::helpers::discord_operation_span("component.defer"))
+				.instrument(crate::helpers::discord_operation_span("interaction.defer"))
 				.await?;
 		}
 
@@ -466,7 +470,7 @@ impl MoveOptionsDialog {
 							EditInteractionResponse::new().components(components.collect()),
 						)
 						.instrument(crate::helpers::discord_operation_span(
-							"component.edit_response",
+							"interaction.edit_response",
 						))
 						.await?;
 				}
@@ -589,7 +593,11 @@ impl MoveOptionsDialog {
 					.selected_thread
 					.ok_or_else(|| anyhow!("No thread specified"))?;
 
-				let Channel::Guild(thread_channel) = thread_id.to_channel(&ctx).await? else {
+				let Channel::Guild(thread_channel) = thread_id
+					.to_channel(&ctx)
+					.instrument(crate::helpers::discord_operation_span("channel.get"))
+					.await?
+				else {
 					tracing::error!("command is marked guild_only yet returned a private channel.");
 					return Err(anyhow!("failed to get thread channel"));
 				};
@@ -730,6 +738,9 @@ async fn get_messages_after_and_including_msg(
 			&ctx,
 			GetMessages::new().after(start_msg.id).limit(MESSAGE_LIMIT),
 		)
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.list_messages",
+		))
 		.await?;
 
 	messages.push(start_msg.clone());
@@ -742,13 +753,17 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 	let _source_lock = ChannelLock::try_lock(&ctx, start_msg.channel_id)
 		.ok_or_else(|| anyhow!("channel is already used by another move operation"))?;
 
-	ctx.defer_ephemeral().await?;
+	ctx.defer_ephemeral()
+		.instrument(crate::helpers::discord_operation_span(
+			"reply.defer_ephemeral",
+		))
+		.await?;
 
 	let messages = get_messages_after_and_including_msg(&ctx, &start_msg).await?;
 
 	if messages.is_empty() {
 		ctx.say("No messages found")
-			.instrument(crate::helpers::discord_operation_span("say"))
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
 			.await?;
 		return Ok(());
 	}
@@ -768,7 +783,10 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 		MoveOptionsDialog::create(ctx, start_msg.clone(), users_by_message_count).await?;
 
 	let options_handle = &options.handle;
-	let options_msg = options_handle.message().await?;
+	let options_msg = options_handle
+		.message()
+		.instrument(crate::helpers::discord_operation_span("reply.fetch"))
+		.await?;
 
 	let mut interaction_stream = options_msg.await_component_interactions(ctx).stream();
 
@@ -786,7 +804,10 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 		}
 	};
 
-	options_handle.delete(ctx).await?;
+	options_handle
+		.delete(ctx)
+		.instrument(crate::helpers::discord_operation_span("reply.delete"))
+		.await?;
 
 	let Some(move_options) = move_options else {
 		return Ok(());
@@ -807,6 +828,9 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 				options.dialog.initial_msg.id
 			)),
 		)
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.create_webhook",
+		))
 		.await?;
 
 	let message_posted_within_max_timespan = |m: &Message| {
@@ -877,6 +901,9 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 			.username(
 				message
 					.author_nick(&ctx)
+					.instrument(crate::helpers::discord_operation_span(
+						"message.author_nick",
+					))
 					.await
 					.unwrap_or(message.author.display_name().to_owned()),
 			)
@@ -886,7 +913,10 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 				let mut attachments = Vec::new();
 
 				for attachment in message.attachments {
-					match CreateAttachment::url(&ctx, &attachment.url).await {
+					match CreateAttachment::url(&ctx, &attachment.url)
+						.instrument(crate::helpers::discord_attachment_span(&attachment.url))
+						.await
+					{
 						Ok(attachment) => attachments.push(attachment),
 						Err(e) => {
 							tracing::warn!(err = %e, ?attachment, "failed to create attachment on relayed message");
@@ -932,7 +962,11 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 	// Rollback relayed messages or new thread/forum post if anything failed.
 	if let Some(err) = relay_error {
 		// Try to delete webhook.
-		if let Err(e) = webhook.delete(&ctx).await {
+		if let Err(e) = webhook
+			.delete(&ctx)
+			.instrument(crate::helpers::discord_operation_span("webhook.delete"))
+			.await
+		{
 			tracing::warn!(err = %e, "failed to delete webhook used for relaying messages");
 		}
 
@@ -943,7 +977,11 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 		} = destination
 			&& delete_on_fail
 		{
-			match thread.delete(&ctx).await {
+			match thread
+				.delete(&ctx)
+				.instrument(crate::helpers::discord_operation_span("channel.delete"))
+				.await
+			{
 				Ok(_) => return Err(anyhow!("failed to move messages: {err}")),
 				Err(e) => {
 					tracing::warn!(err = %e, "failed to delete thread, deleting messages");
@@ -952,7 +990,11 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 		}
 
 		for msg in relayed_messages {
-			if let Err(e) = msg.delete(&ctx).await {
+			if let Err(e) = msg
+				.delete(&ctx)
+				.instrument(crate::helpers::discord_operation_span("message.delete"))
+				.await
+			{
 				tracing::warn!(err = %e, "failed to delete relayed message");
 			}
 		}
@@ -978,6 +1020,9 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 					.join(""),
 			),
 		)
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.send_message",
+		))
 		.await;
 
 	if let Err(e) = notice_res {
@@ -1012,6 +1057,9 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 		if let Err(e) = ctx
 			.channel_id()
 			.delete_messages(&ctx, msg_chunk.iter().map(|m| m.id))
+			.instrument(crate::helpers::discord_operation_span(
+				"channel.delete_messages",
+			))
 			.await
 		{
 			tracing::warn!(err = %e, "failed to delete original messages");
@@ -1024,7 +1072,7 @@ async fn move_messages(ctx: Context<'_>, start_msg: Message) -> Result<()> {
 		Mention::from(ctx.author().id),
 		Mention::from(destination.id())
 	))
-	.instrument(crate::helpers::discord_operation_span("say"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 
 	Ok(())
@@ -1089,7 +1137,11 @@ async fn listen_for_reactions(
 		match emoji.as_str() {
 			// Delete message.
 			"❌" => {
-				if let Err(e) = message.delete(&ctx).await {
+				if let Err(e) = message
+					.delete(&ctx)
+					.instrument(crate::helpers::discord_operation_span("message.delete"))
+					.await
+				{
 					tracing::warn!(err = %e, "failed to delete relayed message");
 				}
 				original_users.remove(&message.id);
@@ -1113,7 +1165,11 @@ async fn listen_for_reactions(
 					)
 				});
 
-				if let Err(e) = reaction.delete(&ctx).await {
+				if let Err(e) = reaction
+					.delete(&ctx)
+					.instrument(crate::helpers::discord_operation_span("reaction.delete"))
+					.await
+				{
 					tracing::warn!(err = %e, "failed to remove edit reaction");
 				}
 			}
@@ -1122,7 +1178,11 @@ async fn listen_for_reactions(
 	}
 
 	// Try to delete webhook.
-	if let Err(e) = webhook.delete(&ctx).await {
+	if let Err(e) = webhook
+		.delete(&ctx)
+		.instrument(crate::helpers::discord_operation_span("webhook.delete"))
+		.await
+	{
 		tracing::warn!(err = %e, "failed to delete webhook used for relaying messages");
 	}
 }
@@ -1134,7 +1194,13 @@ async fn prompt_user_for_edit_to_relayed_message(
 	webhook: Webhook,
 	destination: MoveDestination,
 ) {
-	let dm = match user_id.create_dm_channel(&ctx).await {
+	let dm = match user_id
+		.create_dm_channel(&ctx)
+		.instrument(crate::helpers::discord_operation_span(
+			"user.create_dm_channel",
+		))
+		.await
+	{
 		Ok(channel) => channel,
 		Err(e) => {
 			tracing::warn!(err = %e, "failed to DM user");
@@ -1157,7 +1223,9 @@ async fn prompt_user_for_edit_to_relayed_message(
 
 	let prompt = match dm
 		.say(&ctx, prompt_string)
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.send_message",
+		))
 		.await
 	{
 		Ok(msg) => msg,
@@ -1173,7 +1241,11 @@ async fn prompt_user_for_edit_to_relayed_message(
 		.next()
 		.await
 	else {
-		if let Err(e) = prompt.delete(&ctx).await {
+		if let Err(e) = prompt
+			.delete(&ctx)
+			.instrument(crate::helpers::discord_operation_span("message.delete"))
+			.await
+		{
 			tracing::warn!(err = %e, "failed to delete edit prompt");
 		}
 		return;
@@ -1189,6 +1261,9 @@ async fn prompt_user_for_edit_to_relayed_message(
 				builder
 			}
 		})
+		.instrument(crate::helpers::discord_operation_span(
+			"webhook.edit_message",
+		))
 		.await;
 
 	if let Err(e) = edit_result {
@@ -1199,6 +1274,7 @@ async fn prompt_user_for_edit_to_relayed_message(
 				&ctx,
 				format!("Failed to edit message, webhook has likely been deleted: {e}"),
 			)
+			.instrument(crate::helpers::discord_operation_span("message.reply"))
 			.await;
 
 		if let Err(e) = reply_result {
@@ -1207,7 +1283,11 @@ async fn prompt_user_for_edit_to_relayed_message(
 		return;
 	}
 
-	if let Err(e) = prompt.delete(&ctx).await {
+	if let Err(e) = prompt
+		.delete(&ctx)
+		.instrument(crate::helpers::discord_operation_span("message.delete"))
+		.await
+	{
 		tracing::warn!(err = %e, "failed to delete edit prompt in DM");
 	}
 }

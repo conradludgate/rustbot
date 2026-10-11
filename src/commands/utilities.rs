@@ -54,11 +54,11 @@ const GIT_SHA: &str = match option_env!("FERRISBOT_GIT_SHA") {
 pub async fn go(ctx: Context<'_>) -> Result<(), Error> {
 	if rand::rng().random_bool(0.01) {
 		ctx.say("Yes")
-			.instrument(crate::helpers::discord_operation_span("say"))
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
 			.await?;
 	} else {
 		ctx.say("No")
-			.instrument(crate::helpers::discord_operation_span("say"))
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
 			.await?;
 	}
 	Ok(())
@@ -84,7 +84,7 @@ pub async fn go(ctx: Context<'_>) -> Result<(), Error> {
 )]
 pub async fn source(ctx: Context<'_>) -> Result<(), Error> {
 	ctx.say("https://github.com/rust-community-discord/ferrisbot-for-discord")
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 	Ok(())
 }
@@ -122,6 +122,7 @@ You can edit your message to the bot and the bot will edit its response.";
 			..Default::default()
 		},
 	)
+	.instrument(crate::helpers::discord_operation_span("reply.help"))
 	.await?;
 	Ok(())
 }
@@ -146,7 +147,7 @@ You can edit your message to the bot and the bot will edit its response.";
 	err(Debug),
 )]
 pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
-	poise::builtins::register_application_commands_buttons(ctx).await?;
+	crate::discord::register_application_commands_buttons(ctx).await?;
 
 	Ok(())
 }
@@ -177,7 +178,7 @@ pub async fn uptime(ctx: Context<'_>) -> Result<(), Error> {
 	ctx.say(format!(
 		"Uptime: {days}d {hours}h {minutes}m {seconds}s\nBuild: tag {GIT_TAG}, commit {GIT_SHA}"
 	))
-	.instrument(crate::helpers::discord_operation_span("say"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 
 	Ok(())
@@ -245,7 +246,7 @@ pub async fn conradluget(
 	let attachment = serenity::CreateAttachment::bytes(img_bytes, filename);
 
 	ctx.send(poise::CreateReply::default().attachment(attachment))
-		.instrument(crate::helpers::discord_operation_span("send"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	Ok(())
@@ -286,6 +287,9 @@ pub async fn cleanup(
 	let messages_to_delete = ctx
 		.channel_id()
 		.messages(&ctx, serenity::GetMessages::new().limit(20))
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.list_messages",
+		))
 		.await?
 		.into_iter()
 		.filter(|msg| {
@@ -296,6 +300,9 @@ pub async fn cleanup(
 
 	ctx.channel_id()
 		.delete_messages(&ctx, messages_to_delete)
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.delete_messages",
+		))
 		.await?;
 
 	crate::helpers::acknowledge_success(ctx, "rustOk", '👌').await
@@ -335,7 +342,7 @@ pub async fn ban(
 		banned_user.user.name,
 		crate::helpers::custom_emoji_code(ctx, "ferrisBanne", '🔨')
 	))
-	.instrument(crate::helpers::discord_operation_span("say"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 	Ok(())
 }
@@ -380,12 +387,16 @@ pub async fn selftimeout(
 
 	let mut member = ctx
 		.author_member()
+		.instrument(crate::helpers::discord_operation_span(
+			"context.author_member",
+		))
 		.await
 		.ok_or(anyhow!("failed to fetch member"))?
 		.into_owned();
 
 	member
 		.disable_communication_until_datetime(&ctx, then)
+		.instrument(crate::helpers::discord_operation_span("member.timeout"))
 		.await?;
 
 	ctx.say(format!(
@@ -394,7 +405,7 @@ pub async fn selftimeout(
 		ctx.author().name,
 		then.unix_timestamp()
 	))
-	.instrument(crate::helpers::discord_operation_span("say"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 
 	Ok(())
@@ -420,6 +431,9 @@ pub async fn selftimeout(
 pub async fn solved(ctx: Context<'_>) -> Result<(), Error> {
 	let mut thread = ctx
 		.guild_channel()
+		.instrument(crate::helpers::discord_operation_span(
+			"context.guild_channel",
+		))
 		.await
 		.filter(|channel| channel.kind == ChannelType::PublicThread)
 		.ok_or(anyhow!("not applicable here"))?;
@@ -427,7 +441,7 @@ pub async fn solved(ctx: Context<'_>) -> Result<(), Error> {
 	let solved_tag = thread
 		.parent_id
 		.ok_or(anyhow!("thread lacks parent channel (¿dafuq?)"))? // to my knowledge threads can only ever exist within other channels
-		.to_channel(ctx)
+		.to_channel(ctx).instrument(crate::helpers::discord_operation_span("channel.get"))
 		.await?
 		.guild()
 		.ok_or(anyhow!("parent is not a guild channel (¿dafuq?)"))? // the thread itself is a guild channel, so its parent must be too
@@ -446,6 +460,9 @@ pub async fn solved(ctx: Context<'_>) -> Result<(), Error> {
 
 	thread
 		.edit_thread(ctx, EditThread::new().applied_tags(tags_new))
+		.instrument(crate::helpers::discord_operation_span(
+			"channel.edit_thread",
+		))
 		.await?;
 
 	Ok(())
@@ -482,7 +499,7 @@ pub async fn edit(
 			.content("✅ Please send the new content for the message. I'll wait for 60 seconds.")
 			.ephemeral(true),
 	)
-	.instrument(crate::helpers::discord_operation_span("send"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 
 	// Wait for the next message from the same user in the same channel
@@ -503,7 +520,7 @@ pub async fn edit(
 						.content("❌ Empty message received. Edit cancelled.")
 						.ephemeral(true),
 				)
-				.instrument(crate::helpers::discord_operation_span("send"))
+				.instrument(crate::helpers::discord_operation_span("reply.send"))
 				.await?;
 				return Ok(());
 			}
@@ -515,7 +532,7 @@ pub async fn edit(
 						)
 						.ephemeral(true),
 				)
-				.instrument(crate::helpers::discord_operation_span("send"))
+				.instrument(crate::helpers::discord_operation_span("reply.send"))
 				.await?;
 				return Ok(());
 			}
@@ -531,13 +548,14 @@ pub async fn edit(
 				.content(format!("❌ Failed to log audit information: {e}"))
 				.ephemeral(true),
 		)
-		.instrument(crate::helpers::discord_operation_span("send"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 		return Ok(());
 	}
 
 	message
 		.edit(&ctx, serenity::EditMessage::new().content(&new_content))
+		.instrument(crate::helpers::discord_operation_span("message.edit"))
 		.await?;
 
 	ctx.send(
@@ -545,7 +563,7 @@ pub async fn edit(
 			.content("✅ Message edited successfully!")
 			.ephemeral(true),
 	)
-	.instrument(crate::helpers::discord_operation_span("send"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 
 	Ok(())
@@ -610,7 +628,7 @@ pub async fn server(ctx: Context<'_>) -> Result<(), Error> {
 		..Default::default()
 	};
 	ctx.send(reply)
-		.instrument(crate::helpers::discord_operation_span("send"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	Ok(())
@@ -647,7 +665,10 @@ pub async fn user(
 		.guild()
 		.ok_or(anyhow!("Failed to get guild information"))?
 		.clone();
-	let member = guild.member(ctx.http(), uid).await?;
+	let member = guild
+		.member(ctx.http(), uid)
+		.instrument(crate::helpers::discord_operation_span("guild.member"))
+		.await?;
 	let joined_at = member.joined_at.unwrap_or_default();
 	let roles = member.roles(ctx.cache()).unwrap_or_default();
 
@@ -671,7 +692,7 @@ pub async fn user(
 		..Default::default()
 	};
 	ctx.send(reply)
-		.instrument(crate::helpers::discord_operation_span("send"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 	Ok(())
 }

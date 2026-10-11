@@ -41,7 +41,7 @@ pub async fn miri(
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
 	ctx.say(stub_message(ctx))
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 	let code = &maybe_wrapped(
 		&code.code,
@@ -59,6 +59,10 @@ pub async fn miri(
 			edition: flags.edition,
 			aliasing_model: flags.aliasing_model,
 		})
+		.with_extension(crate::telemetry::ExternalOperation::new(
+			"rust-playground.miri",
+			"rust-playground",
+		))
 		.send()
 		.await?
 		.json()
@@ -114,7 +118,7 @@ pub async fn expand(
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
 	ctx.say(stub_message(ctx))
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	let code = maybe_wrapped(&code.code, ResultHandling::None, false);
@@ -129,6 +133,10 @@ pub async fn expand(
 			code: &code,
 			edition: flags.edition,
 		})
+		.with_extension(crate::telemetry::ExternalOperation::new(
+			"rust-playground.expand",
+			"rust-playground",
+		))
 		.send()
 		.await?
 		.json()
@@ -203,7 +211,7 @@ pub async fn clippy(
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
 	ctx.say(stub_message(ctx))
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	let code = &format!(
@@ -227,6 +235,10 @@ pub async fn clippy(
 			edition: flags.edition,
 			crate_type: CrateType::Binary,
 		})
+		.with_extension(crate::telemetry::ExternalOperation::new(
+			"rust-playground.clippy",
+			"rust-playground",
+		))
 		.send()
 		.await?
 		.json()
@@ -284,7 +296,7 @@ pub async fn fmt(
 	code: poise::CodeBlock,
 ) -> Result<(), Error> {
 	ctx.say(stub_message(ctx))
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	let code = &maybe_wrapped(&code.code, ResultHandling::None, false);

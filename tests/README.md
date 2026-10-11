@@ -46,6 +46,22 @@ These tests are marked `#[ignore]`: ordinary `cargo test --all-targets` reports
 them as ignored, and CI explicitly runs them with `--ignored`. An explicitly
 requested run fails if the services are unavailable.
 
+## Inspect test traces in Jaeger
+
+Start Jaeger and the Collector alongside the existing Fauxcord service, then
+export the integration tests to the Collector's complete OTLP traces URL:
+
+```sh
+docker compose -f compose.local.yaml -p rustbot-tests up --detach --wait jaeger otel-collector
+FERRIS_TEST_OTLP_ENDPOINT=http://127.0.0.1:4319/v1/traces \
+  cargo test --locked --test fauxcord_snapshots -- --ignored
+```
+
+Open <http://localhost:16686> and select `ferrisbot-integration`. Each finished
+case flushes its spans; allow the Collector's tail-sampling decision delay.
+The ordinary test run needs no collector. An explicitly configured exporter
+fails the tests if export fails.
+
 ## Review snapshots
 
 When a reply changes or a test has no snapshot yet, `insta` prints a diff and

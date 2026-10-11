@@ -29,6 +29,16 @@ These spans measure SDK operations (which may use caches or multiple requests),
 not individual HTTP requests. The Collector adds up to three seconds of visibility delay while it
 waits to decide.
 
+External HTTP requests use operation names such as `rust-playground.execute`
+and `godbolt.compile`, with CLIENT kind, `peer.service`, server address, request
+method, and numeric response status. SQLite executions use names such as
+`SELECT highlights` and `UPDATE server_icon_rotation`, with CLIENT kind,
+`db.system.name=sqlite`, `db.namespace=main`, operation and collection attributes,
+and `db.query.summary`. Legacy `db.system` and `db.name` attributes support
+consumers still migrating to the stable database conventions. Internal database
+workflows keep their `db.*` names and contain the individual query spans.
+Query spans omit SQL text and bound values; SQLite has no remote server address.
+
 The `ferris` service depends on `otel-collector`; traces flow through the
 Collector to Jaeger. The Collector's OTLP endpoint is also available on
 `localhost:4319` for local OTLP experiments.

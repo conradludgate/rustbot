@@ -44,18 +44,22 @@ pub async fn man(
 		.http
 		.get(&url)
 		.header(header::USER_AGENT, USER_AGENT)
+		.with_extension(crate::telemetry::ExternalOperation::new(
+			"manpages.fetch",
+			"debian-manpages",
+		))
 		.send()
 		.await
 	{
 		if response.status() == 404 {
 			ctx.say("Man page not found.")
-				.instrument(crate::helpers::discord_operation_span("say"))
+				.instrument(crate::helpers::discord_operation_span("reply.send"))
 				.await?;
 			return Ok(());
 		}
 	} else {
 		ctx.say("Failed to fetch man page.")
-			.instrument(crate::helpers::discord_operation_span("say"))
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
 			.await?;
 		return Ok(());
 	}
@@ -78,7 +82,7 @@ pub async fn man(
 				.timestamp(serenity::Timestamp::now()),
 		),
 	)
-	.instrument(crate::helpers::discord_operation_span("send"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 
 	Ok(())

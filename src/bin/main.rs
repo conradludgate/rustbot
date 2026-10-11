@@ -16,6 +16,7 @@ use serde_json::json;
 use snafu::{Report, ResultExt as _, Snafu};
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use tokio::runtime::Runtime;
+use tracing::Instrument as _;
 use tracing::{debug, error, info, level_filters::LevelFilter, warn};
 use tracing_appender::rolling::{self, RollingFileAppender, Rotation};
 use tracing_log::AsLog as _;
@@ -135,6 +136,7 @@ fn app(config: &Config) -> Result<(), AppError> {
 				.create_if_missing(true);
 
 			let pool = SqlitePool::connect_with(opts)
+				.instrument(ferrisbot_for_discord::telemetry::sqlite_span("CONNECT", ""))
 				.await
 				.context(DatabaseSnafu {
 					url: config.database.url.to_owned(),
@@ -142,6 +144,7 @@ fn app(config: &Config) -> Result<(), AppError> {
 
 			sqlx::migrate!()
 				.run(&pool)
+				.instrument(ferrisbot_for_discord::telemetry::sqlite_span("MIGRATE", ""))
 				.await
 				.expect("Failed to run migrations");
 

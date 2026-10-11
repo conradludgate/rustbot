@@ -1,7 +1,7 @@
 //! Observe the production check span closing, including all awaited notifications.
 //! Fauxcord broadcasts to every test bot, so both bot and message IDs must match.
 
-use std::sync::{LazyLock, Once};
+use std::sync::{LazyLock, Once, OnceLock};
 
 use anyhow::{Context as _, Result};
 use tokio::sync::broadcast;
@@ -18,6 +18,7 @@ use tracing_subscriber::{
 
 static CHECKS: LazyLock<broadcast::Sender<Check>> = LazyLock::new(|| broadcast::channel(1024).0);
 static INITIALIZE: Once = Once::new();
+static TRACES: OnceLock<opentelemetry_sdk::trace::SdkTracerProvider> = OnceLock::new();
 
 #[derive(Clone, Default)]
 pub(super) struct Check {
@@ -69,6 +70,31 @@ pub(super) fn initialize() {
 				metadata.name() == "highlight.check_message"
 			}),
 		));
+		let otel = std::env::var("FERRIS_TEST_OTLP_ENDPOINT")
+			.ok()
+			.map(|endpoint| {
+				use opentelemetry::trace::TracerProvider as _;
+				use opentelemetry_otlp::WithExportConfig as _;
+				let exporter = opentelemetry_otlp::SpanExporter::builder()
+					.with_http()
+					.with_endpoint(endpoint)
+					.build()
+					.expect("build test OTLP exporter");
+				let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+					.with_batch_exporter(exporter)
+					.with_resource(
+						opentelemetry_sdk::Resource::builder()
+							.with_service_name("ferrisbot-integration")
+							.build(),
+					)
+					.build();
+				let layer = tracing_opentelemetry::layer()
+					.with_tracer(provider.tracer("ferrisbot-test"))
+					.with_filter(tracing_subscriber::EnvFilter::new("info,serenity=warn"));
+				TRACES.set(provider).expect("store test tracer provider");
+				layer
+			});
+		let subscriber = subscriber.with(otel);
 		tracing::subscriber::set_global_default(subscriber)
 			.expect("install integration-test highlight observer");
 	});
@@ -100,4 +126,11 @@ pub(super) async fn wait(
 	.with_context(|| {
 		format!("highlight check did not finish for bot {bot_id}, message {message_id}")
 	})?
+}
+
+/// Optional local Jaeger export; ordinary snapshot tests need no tracing backend.
+pub(super) fn flush_traces() {
+	if let Some(provider) = TRACES.get() {
+		provider.force_flush().expect("flush test traces");
+	}
 }

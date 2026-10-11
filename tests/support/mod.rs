@@ -173,6 +173,7 @@ impl TestBot {
 	/// Stop this bot, remove its Fauxcord state, and verify upstream HTTP mocks.
 	pub async fn finish(mut self) -> Result<Vec<Request>> {
 		self.stop_bot().await;
+		highlight_checks::flush_traces();
 		let cleanup = self.discord.cleanup().await;
 		let requests = self
 			.api

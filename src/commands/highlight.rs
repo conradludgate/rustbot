@@ -55,7 +55,7 @@ pub async fn add(c: Context<'_>, regex: String) -> Result<()> {
 
 	if let Err(e) = RegexBuilder::new(&regex).size_limit(1 << 10).build() {
 		c.say(format!("```\n{e}```"))
-			.instrument(crate::helpers::discord_operation_span("say"))
+			.instrument(crate::helpers::discord_operation_span("reply.send"))
 			.await?;
 		return Ok(());
 	}
@@ -64,7 +64,7 @@ pub async fn add(c: Context<'_>, regex: String) -> Result<()> {
 
 	RegexHolder::update(c.data()).await;
 	c.say("hl added!")
-		.instrument(crate::helpers::discord_operation_span("say"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 
 	Ok(())
@@ -95,7 +95,7 @@ pub async fn remove(c: Context<'_>, id: i64) -> Result<()> {
 			"hl not found."
 		}
 	})
-	.instrument(crate::helpers::discord_operation_span("say"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 
 	RegexHolder::update(c.data()).await;
@@ -133,7 +133,7 @@ pub async fn list(c: Context<'_>) -> Result<()> {
 				.description(description),
 		),
 	)
-	.instrument(crate::helpers::discord_operation_span("send_reply"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 	Ok(())
 }
@@ -177,7 +177,7 @@ pub async fn mat(c: Context<'_>, haystack: String) -> Result<()> {
 				.description(itertools::intersperse(x, "\n".to_string()).collect::<String>()),
 		),
 	)
-	.instrument(crate::helpers::discord_operation_span("send_reply"))
+	.instrument(crate::helpers::discord_operation_span("reply.send"))
 	.await?;
 
 	Ok(())
@@ -358,16 +358,20 @@ mod database {
 	) -> Result<(), Error> {
 		let member_id = u64_to_i64(user_id.get());
 
-		sqlx::query!(
-			r#"
+		crate::telemetry::sqlite_query(
+			"INSERT",
+			"highlights",
+			sqlx::query!(
+				r#"
 			insert into highlights (member_id, highlight)
 				values (?1, ?2)
 				on conflict (member_id, highlight) do nothing
 			"#,
-			member_id,
-			regex
+				member_id,
+				regex
+			)
+			.execute(pool),
 		)
-		.execute(pool)
 		.await
 		.context("Failed to add highlight to database")?;
 
@@ -388,12 +392,16 @@ mod database {
 	) -> Result<bool, Error> {
 		let member_id = u64_to_i64(user_id.get());
 
-		let result = sqlx::query!(
-			"delete from highlights where id = ?1 and member_id = ?2",
-			id,
-			member_id
+		let result = crate::telemetry::sqlite_query(
+			"DELETE",
+			"highlights",
+			sqlx::query!(
+				"delete from highlights where id = ?1 and member_id = ?2",
+				id,
+				member_id
+			)
+			.execute(pool),
 		)
-		.execute(pool)
 		.await
 		.context("Failed to remove highlight from database")?;
 
@@ -413,11 +421,15 @@ mod database {
 	) -> Result<Vec<(i64, String)>, Error> {
 		let member_id = u64_to_i64(user_id.get());
 
-		let rows = sqlx::query!(
-			"select id, highlight from highlights where member_id = ?1",
-			member_id
+		let rows = crate::telemetry::sqlite_query(
+			"SELECT",
+			"highlights",
+			sqlx::query!(
+				"select id, highlight from highlights where member_id = ?1",
+				member_id
+			)
+			.fetch_all(pool),
 		)
-		.fetch_all(pool)
 		.await
 		.context("Failed to fetch highlights from database")?;
 
@@ -432,10 +444,13 @@ mod database {
 	/// Gets all highlights from all users.
 	#[tracing::instrument(name = "db.highlights.get_all", skip_all, err(Debug))]
 	pub async fn highlight_get_all(pool: &Pool<Sqlite>) -> Result<Vec<(i64, String)>, Error> {
-		let rows = sqlx::query!("select member_id, highlight from highlights")
-			.fetch_all(pool)
-			.await
-			.context("Failed to fetch all highlights from database")?;
+		let rows = crate::telemetry::sqlite_query(
+			"SELECT",
+			"highlights",
+			sqlx::query!("select member_id, highlight from highlights").fetch_all(pool),
+		)
+		.await
+		.context("Failed to fetch all highlights from database")?;
 
 		let mut highlights = Vec::new();
 		for row in rows {

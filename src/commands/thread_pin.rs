@@ -16,7 +16,13 @@ async fn can_pin_in_thread(ctx: Context<'_>) -> Result<(), ThreadPinError> {
 		return Ok(());
 	}
 
-	let Some(channel) = ctx.guild_channel().await else {
+	let Some(channel) = ctx
+		.guild_channel()
+		.instrument(crate::helpers::discord_operation_span(
+			"context.guild_channel",
+		))
+		.await
+	else {
 		return Err(ThreadPinError::NoChannel);
 	};
 
@@ -50,7 +56,10 @@ async fn can_pin_in_thread(ctx: Context<'_>) -> Result<(), ThreadPinError> {
 pub async fn thread_pin(ctx: Context<'_>, message: serenity::Message) -> Result<()> {
 	let reply = match can_pin_in_thread(ctx).await {
 		Ok(()) => {
-			message.pin(ctx.serenity_context()).await?;
+			message
+				.pin(ctx.serenity_context())
+				.instrument(crate::helpers::discord_operation_span("message.pin"))
+				.await?;
 			"Pinned message to your thread!"
 		}
 		Err(ThreadPinError::NoChannel) => "Error: Cannot fetch any information about this channel!",
@@ -65,7 +74,7 @@ pub async fn thread_pin(ctx: Context<'_>, message: serenity::Message) -> Result<
 
 	let reply = poise::CreateReply::default().content(reply).ephemeral(true);
 	ctx.send(reply)
-		.instrument(crate::helpers::discord_operation_span("send"))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
 		.await?;
 	Ok(())
 }
