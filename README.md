@@ -68,6 +68,14 @@ message in a channel Ferris can view; channel history is not scanned. There is n
 are required for role assignment. Ferris needs Manage Roles and its highest role
 must be above Rustacean. Disabling SQLite disables this feature.
 
+## Server icon catalogue
+
+`/server_icon list` shows 12 labelled previews per page in one message. Previous
+and Next replace the same contact sheet; only the person who opened it can turn
+pages. Controls disable after ten minutes, leaving the last page visible. Small
+catalogues show a single sheet without buttons. Animated icons use a still frame.
+Moderators can pass a displayed name to `/server_icon set` as its `suffix`.
+
 ## Database setup (sqlx)
 
 We use sqlx with SQLite. Point `DATABASE_URL` at the database file you want to use (default: `sqlite://database/ferris.sqlite3`). Run the following after changing schemas or when setting up a fresh checkout:

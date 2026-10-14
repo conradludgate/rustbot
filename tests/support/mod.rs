@@ -216,6 +216,29 @@ impl TestBot {
 			.with_context(|| format!("command: {command}"))
 	}
 
+	pub async fn wait_for_command_attachment(&self) -> Result<Vec<serde_json::Value>> {
+		let deadline = tokio::time::Instant::now() + REPLY_TIMEOUT;
+		loop {
+			let messages = self.discord.command_message_payloads().await?;
+			// Fauxcord inserts the message before asynchronously saving its uploaded files.
+			if messages.iter().any(|message| {
+				message["attachments"]
+					.as_array()
+					.is_some_and(|files| !files.is_empty())
+			}) {
+				return Ok(messages);
+			}
+			if tokio::time::Instant::now() >= deadline {
+				bail!("no command attachment within {REPLY_TIMEOUT:?}: {messages:#?}");
+			}
+			tokio::time::sleep(POLL_INTERVAL).await;
+		}
+	}
+
+	pub fn server_icon_directory(&self) -> &Path {
+		self._icon_files.path()
+	}
+
 	/// Inject a non-command message and wait for this bot to finish its highlight check.
 	pub async fn inject_message(&self, content: &str) -> Result<()> {
 		let checks = highlight_checks::subscribe();

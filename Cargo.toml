@@ -16,7 +16,7 @@ figment = { version = "0.10.19", features = ["env", "toml"] }
 futures = "0.3.31"
 http = "1"
 git-version = "0.3.9"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "gif", "jpeg", "webp"] }
 imageproc = { version = "0.25", default-features = false }
 itertools = "0.14"
 opentelemetry = { version = "0.30.0", features = ["trace"] }

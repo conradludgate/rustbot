@@ -1,3 +1,5 @@
+mod catalogue;
+
 use std::{
 	collections::HashMap,
 	path::{Path, PathBuf},
@@ -648,23 +650,7 @@ pub async fn server_icon_list(ctx: Context<'_>) -> Result<(), Error> {
 		return Ok(());
 	}
 
-	let mut page = String::from("Available icons:\n");
-	for choice in choices {
-		let image_link = format!("<{GITHUB_ICON_URL}{}?raw=true>", choice.filename);
-		let entry = format!("`{}` {image_link}\n", choice.suffix);
-		if page.len() + entry.len() > 1800 {
-			ctx.say(&page)
-				.instrument(crate::helpers::discord_operation_span("reply.send"))
-				.await?;
-			page.clear();
-		}
-		page.push_str(&entry);
-	}
-	if !page.is_empty() {
-		ctx.say(page)
-			.instrument(crate::helpers::discord_operation_span("reply.send"))
-			.await?;
-	}
+	catalogue::show(ctx, choices).await?;
 	Ok(())
 }
 

@@ -7,6 +7,11 @@ Each test shows its WireMock expectations, command, and snapshot assertion
 together. Bot lifecycle and polling live in `tests/support/mod.rs`; the
 Fauxcord control API wrapper lives in `tests/support/fauxcord.rs`.
 
+Server icon catalogue cases check the uploaded contact sheet, embed, and page
+contents. The pinned Fauxcord always returns an empty `components` array and
+cannot simulate button clicks. Initial controls, navigation boundaries, expiry
+states, and attachment replacement are covered by the catalogue unit tests.
+
 ## Run the tests
 
 Stop the [interactive local stack](../local-test/README.md) first if it is

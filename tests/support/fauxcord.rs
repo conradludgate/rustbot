@@ -218,6 +218,25 @@ impl TestDiscord {
 			.collect())
 	}
 
+	pub(super) async fn command_message_payloads(&self) -> Result<Vec<serde_json::Value>> {
+		let messages: Vec<serde_json::Value> = self
+			.client
+			.get(format!(
+				"{}/api/v10/channels/{}/messages",
+				self.base_url, self.command_channel
+			))
+			.header("Authorization", format!("Bot {}", self.bot_token))
+			.send()
+			.await?
+			.error_for_status()?
+			.json()
+			.await?;
+		Ok(messages
+			.into_iter()
+			.filter(|message| message["author"]["id"] == self.bot_id)
+			.collect())
+	}
+
 	pub(super) async fn bot_dm_messages(&self) -> Result<Vec<String>> {
 		let channel: DmChannel = self
 			.client
