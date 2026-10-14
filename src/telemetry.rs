@@ -5,6 +5,11 @@ use reqwest::{Request, Response};
 use reqwest_tracing::ReqwestOtelSpanBackend;
 use tracing::{Instrument as _, Span};
 
+// Tracing callsite interest is process-wide. Serialize scoped exporter setup
+// and teardown across unit-test modules that inspect exported spans.
+#[cfg(test)]
+pub(crate) static TEST_CAPTURE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[derive(Clone, Copy)]
 pub struct ExternalOperation {
 	name: &'static str,

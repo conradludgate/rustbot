@@ -21,8 +21,7 @@ use super::{
 	RETRY,
 	tests::{http, member, message, mock_member, mock_role, service},
 };
-// Isolate scoped subscriber registration and teardown across exported-data assertions.
-static CAPTURE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+use crate::telemetry::TEST_CAPTURE_LOCK as CAPTURE_LOCK;
 
 const JOINED: i64 = 1_700_000_000;
 const DELAY: i64 = 1800;

@@ -74,6 +74,9 @@ must be above Rustacean. Disabling SQLite disables this feature.
 and Next replace the same contact sheet; only the person who opened it can turn
 pages. Controls disable after ten minutes, leaving the last page visible. Small
 catalogues show a single sheet without buttons. Animated icons use a still frame.
+The command trace ends once the catalogue is sent. Each button click and the
+expiry cleanup start a separate trace linked to the original command through an
+OpenTelemetry span link; idle browsing holds no span open.
 Moderators can pass a displayed name to `/server_icon set` as its `suffix`.
 
 ## Database setup (sqlx)

@@ -1,11 +1,13 @@
-use std::{io::Cursor, time::Duration};
+use std::{future::Future, io::Cursor, sync::Arc, time::Duration};
 
 use anyhow::{Context as _, Error};
-use futures::StreamExt as _;
+use futures::{Stream, StreamExt as _};
 use image::{ImageFormat, Rgba, RgbaImage};
 use imageproc::drawing::{draw_text_mut, text_size};
+use opentelemetry::trace::{SpanContext, TraceContextExt as _};
 use poise::serenity_prelude as serenity;
-use tracing::Instrument as _;
+use tracing::{Instrument as _, instrument::WithSubscriber as _};
+use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
 use super::IconChoice;
 use crate::{helpers::discord_operation_span, types::Context};
@@ -85,12 +87,11 @@ pub(super) async fn show(ctx: Context<'_>, choices: Vec<IconChoice>) -> Result<(
 	let previous = format!("{}:server-icons:previous", ctx.id());
 	let next = format!("{}:server-icons:next", ctx.id());
 	// Register before sending so a fast click cannot be lost between API calls.
-	let mut presses = serenity::collector::ComponentInteractionCollector::new(ctx)
+	let presses = serenity::collector::ComponentInteractionCollector::new(ctx)
 		.channel_id(ctx.channel_id())
 		.custom_ids(vec![previous.clone(), next.clone()])
 		.timeout(LIFETIME)
 		.stream();
-	let controls = |page, expired| buttons(&previous, &next, page, pages.len(), expired);
 	let reply = ctx
 		.send(initial_reply(&pages, total, &previous, &next))
 		.instrument(discord_operation_span("reply.send"))
@@ -102,15 +103,92 @@ pub(super) async fn show(ctx: Context<'_>, choices: Vec<IconChoice>) -> Result<(
 		.message()
 		.instrument(discord_operation_span("reply.fetch"))
 		.await?;
-	let mut page = 0;
-	while let Some(press) = presses.next().await {
-		if press.message.id != message.id {
-			continue;
+	// A SpanContext is just IDs/flags: unlike a tracing::Span, it does not keep
+	// the command or its Gateway ancestors open while the user is browsing.
+	let origin = tracing::Span::current()
+		.context()
+		.span()
+		.span_context()
+		.clone();
+	let session = CatalogueSession {
+		http: ctx.serenity_context().http.clone(),
+		channel: ctx.channel_id(),
+		message: message.id,
+		author: ctx.author().id,
+		pages,
+		total,
+		previous,
+		next,
+		origin,
+		page: 0,
+	};
+	spawn_listener(session.run(presses));
+	Ok(())
+}
+
+struct CatalogueSession {
+	http: Arc<serenity::Http>,
+	channel: serenity::ChannelId,
+	message: serenity::MessageId,
+	author: serenity::UserId,
+	pages: Vec<CataloguePage>,
+	total: usize,
+	previous: String,
+	next: String,
+	origin: SpanContext,
+	page: usize,
+}
+
+impl CatalogueSession {
+	fn controls(&self, expired: bool) -> Vec<serenity::CreateActionRow> {
+		buttons(
+			&self.previous,
+			&self.next,
+			self.page,
+			self.pages.len(),
+			expired,
+		)
+	}
+
+	async fn run(
+		mut self,
+		mut presses: impl Stream<Item = serenity::ComponentInteraction> + Unpin,
+	) -> Result<(), Error> {
+		// Waiting is intentionally uninstrumented. Each interaction gets a short
+		// root trace; Discord API spans stay children of that individual action.
+		while let Some(press) = presses.next().await {
+			if press.message.id != self.message {
+				continue;
+			}
+			let origin = self.origin.clone();
+			linked_action(&origin, "click", self.handle_press(&press)).await?;
 		}
-		if press.user.id != ctx.author().id {
+		linked_action(&self.origin, "expire", async {
+			// Edit only the controls: preserve the last image and embed after expiry.
+			self.channel
+				.edit_message(
+					&self.http,
+					self.message,
+					serenity::EditMessage::new().components(self.controls(true)),
+				)
+				.instrument(discord_operation_span("message.edit"))
+				.await?;
+			Ok(())
+		})
+		.await
+	}
+
+	async fn handle_press(&mut self, press: &serenity::ComponentInteraction) -> Result<(), Error> {
+		let span = tracing::Span::current();
+		let allowed = press.user.id == self.author;
+		span.record("author.id", press.user.id.get());
+		span.record("channel.id", self.channel.get());
+		span.record("message.id", self.message.get());
+		span.record("catalogue.allowed", allowed);
+		if !allowed {
 			press
 				.create_response(
-					ctx,
+					&self.http,
 					serenity::CreateInteractionResponse::Message(
 						serenity::CreateInteractionResponseMessage::new()
 							.content("Run `/server_icon list` to browse your own catalogue.")
@@ -119,38 +197,82 @@ pub(super) async fn show(ctx: Context<'_>, choices: Vec<IconChoice>) -> Result<(
 				)
 				.instrument(discord_operation_span("interaction.create_response"))
 				.await?;
-			continue;
+			return Ok(());
 		}
-		page = next_page(page, pages.len(), press.data.custom_id == next);
+		let forward = press.data.custom_id == self.next;
+		span.record(
+			"catalogue.direction",
+			if forward { "next" } else { "previous" },
+		);
+		self.page = next_page(self.page, self.pages.len(), forward);
+		span.record("catalogue.page", self.page + 1);
 		press
-			.create_response(ctx, serenity::CreateInteractionResponse::Acknowledge)
+			.create_response(&self.http, serenity::CreateInteractionResponse::Acknowledge)
 			.instrument(discord_operation_span("interaction.acknowledge"))
 			.await?;
-		ctx.channel_id()
+		self.channel
 			.edit_message(
-				ctx,
-				message.id,
+				&self.http,
+				self.message,
 				page_update(
-					&pages[page],
-					page,
-					pages.len(),
-					total,
-					controls(page, false),
+					&self.pages[self.page],
+					self.page,
+					self.pages.len(),
+					self.total,
+					self.controls(false),
 				),
 			)
 			.instrument(discord_operation_span("message.edit"))
 			.await?;
+		Ok(())
 	}
-	// Edit only the controls: preserve the last image and embed after expiry.
-	ctx.channel_id()
-		.edit_message(
-			ctx,
-			message.id,
-			serenity::EditMessage::new().components(controls(page, true)),
-		)
-		.instrument(discord_operation_span("message.edit"))
-		.await?;
-	Ok(())
+}
+
+fn spawn_listener(
+	operation: impl Future<Output = Result<(), Error>> + Send + 'static,
+) -> tokio::task::JoinHandle<()> {
+	// Keep the subscriber, not the current span. Instrumenting this task with
+	// the command span would keep its entire trace open for the session lifetime.
+	tokio::spawn(
+		async move {
+			if operation.await.is_err() {
+				tracing::error!("Server icon catalogue listener stopped after an action failed");
+			}
+		}
+		.with_current_subscriber(),
+	)
+}
+
+async fn linked_action<T>(
+	origin: &SpanContext,
+	action: &'static str,
+	operation: impl Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+	let span = tracing::info_span!(parent: None, "server_icon.catalogue.action",
+		otel.name = format!("server_icon.catalogue.{action}"),
+		catalogue.action = action,
+		author.id = tracing::field::Empty,
+		channel.id = tracing::field::Empty,
+		message.id = tracing::field::Empty,
+		catalogue.allowed = tracing::field::Empty,
+		catalogue.direction = tracing::field::Empty,
+		catalogue.page = tracing::field::Empty,
+		otel.status_code = tracing::field::Empty,
+		error.type = tracing::field::Empty,
+	);
+	if origin.is_valid() {
+		span.add_link(origin.clone());
+	}
+	async {
+		let result = operation.await;
+		if result.is_err() {
+			span.record("otel.status_code", "ERROR");
+			span.record("error.type", "catalogue.action.failed");
+		}
+		result
+	}
+	.instrument(span.clone())
+	.await
 }
 
 fn initial_reply(
@@ -453,3 +575,6 @@ mod tests {
 		);
 	}
 }
+
+#[cfg(test)]
+mod telemetry_tests;
