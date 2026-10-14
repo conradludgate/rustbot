@@ -250,21 +250,143 @@ pub async fn targets(ctx: Context<'_>) -> Result<(), Error> {
 		SemverRanking::from(&*lhs.semver).cmp(&SemverRanking::from(&*rhs.semver))
 	});
 
-	ctx.send(
-		poise::CreateReply::default().embed(
-			serenity::CreateEmbed::default()
-				.title("Godbolt Targets")
-				.fields(targets.into_iter().map(|target| {
-					(
-						target.semver,
-						format!("{} (runs on {})", target.name, target.instruction_set),
-						true,
-					)
-				})),
-		),
-	)
-	.instrument(crate::helpers::discord_operation_span("reply.send"))
-	.await?;
+	ctx.send(targets_reply(&targets))
+		.instrument(crate::helpers::discord_operation_span("reply.send"))
+		.await?;
 
 	Ok(())
+}
+
+fn targets_reply(targets: &[GodboltTarget]) -> poise::CreateReply {
+	let mut builder = poise::CreateReply::default();
+	if targets.is_empty() {
+		return builder.embed(serenity::CreateEmbed::default().title("Godbolt Targets"));
+	}
+
+	// Discord allows at most 25 fields per embed.
+	for (i, chunk) in targets.chunks(25).enumerate() {
+		let mut embed = serenity::CreateEmbed::default();
+		if i == 0 {
+			embed = embed.title("Godbolt Targets");
+		}
+		embed = embed.fields(chunk.iter().map(|target| {
+			(
+				if target.semver.is_empty() {
+					target.id.as_str()
+				} else {
+					target.semver.as_str()
+				},
+				format!("{} (runs on {})", target.name, target.instruction_set),
+				true,
+			)
+		}));
+		builder = builder.embed(embed);
+	}
+
+	builder
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn targets_reply_respects_field_limit_and_preserves_targets() {
+		for count in [1_usize, 24, 25, 26, 50, 51, 124, 250] {
+			let targets: Vec<_> = (0..count)
+				.map(|i| GodboltTarget {
+					id: format!("r{i}"),
+					name: format!("rustc {i}"),
+					semver: format!("1.{i}.0"),
+					instruction_set: "amd64".into(),
+				})
+				.collect();
+			let reply = targets_reply(&targets);
+			assert_eq!(reply.embeds.len(), count.div_ceil(25), "{count} targets");
+			let embeds: Vec<serde_json::Value> = reply
+				.embeds
+				.iter()
+				.map(|embed| serde_json::to_value(embed).unwrap())
+				.collect();
+			assert_eq!(embeds[0]["title"], "Godbolt Targets");
+			assert!(
+				embeds
+					.iter()
+					.skip(1)
+					.all(|embed| embed.get("title").is_none())
+			);
+			let mut fields = Vec::new();
+			for embed in &embeds {
+				let chunk = embed["fields"].as_array().unwrap();
+				assert!(!chunk.is_empty() && chunk.len() <= 25);
+				fields.extend(chunk);
+			}
+			assert_eq!(fields.len(), count);
+			for (field, target) in fields.iter().zip(&targets) {
+				assert_eq!(field["name"], target.semver);
+				assert_eq!(
+					field["value"],
+					format!("{} (runs on {})", target.name, target.instruction_set)
+				);
+				assert_eq!(field["inline"], true);
+			}
+		}
+	}
+
+	#[test]
+	fn recorded_godbolt_targets_fit_discord_message_limits() {
+		let targets: Vec<GodboltTarget> = serde_json::from_str(include_str!(
+			"../../../tests/fixtures/godbolt-compilers-rust.json"
+		))
+		.unwrap();
+		assert!(targets.len() > 25);
+		let reply = targets_reply(&targets);
+		assert!(reply.embeds.len() <= 10);
+		let mut characters = 0;
+		let mut field_count = 0;
+		for embed in &reply.embeds {
+			let embed = serde_json::to_value(embed).unwrap();
+			characters += embed["title"]
+				.as_str()
+				.map_or(0, |title| title.chars().count());
+			let fields = embed["fields"].as_array().unwrap();
+			assert!(fields.len() <= 25);
+			field_count += fields.len();
+			for field in fields {
+				let name = field["name"].as_str().unwrap().chars().count();
+				let value = field["value"].as_str().unwrap().chars().count();
+				assert!((1..=256).contains(&name));
+				assert!((1..=1024).contains(&value));
+				characters += name + value;
+			}
+		}
+		assert_eq!(field_count, targets.len());
+		assert!(characters <= 6000);
+	}
+
+	#[test]
+	fn targets_reply_uses_compiler_id_for_empty_versions() {
+		let target = GodboltTarget {
+			id: "mrustc-master".into(),
+			name: "mrustc (master)".into(),
+			semver: String::new(),
+			instruction_set: "amd64".into(),
+		};
+		let reply = targets_reply(&[target]);
+		let embed = serde_json::to_value(&reply.embeds[0]).unwrap();
+		assert_eq!(embed["fields"][0]["name"], "mrustc-master");
+	}
+
+	#[test]
+	fn targets_reply_keeps_title_when_empty() {
+		let reply = targets_reply(&[]);
+		assert_eq!(reply.embeds.len(), 1);
+		let embed = serde_json::to_value(&reply.embeds[0]).unwrap();
+		assert_eq!(embed["title"], "Godbolt Targets");
+		assert!(
+			embed
+				.get("fields")
+				.is_none_or(|fields| fields.as_array().unwrap().is_empty())
+		);
+	}
 }
