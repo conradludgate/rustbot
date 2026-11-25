@@ -257,9 +257,13 @@ pub fn maybe_wrapped(code: &str, result_handling: ResultHandling, unsf: bool) ->
 		// I think it better to deliberately let the compiler error for this case
 	}
 
-	if let Ok(file) = parse_str::<File>(code)
-		&& file.items.iter().any(item_is_main)
-	{
+    let should_main_wrap = match parse_str::<File>(code) {
+		Err(_failed_to_parse) => false,
+		Ok(file_with_fn_main) if file_with_fn_main.items.iter().any(item_is_main) => false,
+		Ok(_file_with_no_main) => true,
+	};
+
+    if !should_main_wrap {
 		return Cow::Borrowed(code);
 	}
 
